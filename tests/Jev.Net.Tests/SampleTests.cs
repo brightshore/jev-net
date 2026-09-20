@@ -1,4 +1,6 @@
 using Jev.Net.Samples;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Jev.Net.Tests;
 
@@ -197,6 +199,34 @@ public sealed class SampleTests
         CompositeScoring.Rank(judged, CompositeScoring.Weights.Support).Select(j => j.Ticket).Should().Equal("outage", "typo");
         CompositeScoring.Rank(judged, CompositeScoring.Weights.QuickWins).Select(j => j.Ticket).Should().Equal("typo", "outage");
         handler.Requests.Should().HaveCount(2, "two tickets judged once each - re-ranking cost nothing");
+    }
+
+    [TestMethod]
+    public async Task The_Dependency_Injection_Snippet_Builds_A_Working_Singleton()
+    {
+        // The README's registration, verbatim, in a real container - with the named HttpClient's primary handler
+        // swapped for a stub, which is exactly the seam IHttpClientFactory exists to offer.
+        var handler = new StubHandler(request =>
+        {
+            request.Header("authorization").Should().Be("Bearer key-from-configuration");
+            return Http.Json(200, ClientTests.Result);
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["TypeSafe:ApiKey"] = "key-from-configuration" }).Build());
+        ReadmeSnippets.DependencyInjection(services);
+        services.AddHttpClient("typesafe").ConfigurePrimaryHttpMessageHandler(() => handler);
+
+        ITypeSafeClient first, second;
+        await using (var provider = services.BuildServiceProvider())
+        {
+            first = provider.GetRequiredService<ITypeSafeClient>();
+            second = provider.GetRequiredService<ITypeSafeClient>();
+            (await first.SystemOneAsync("x", Clients.OneQuestion)).Model.Should().Be("jev-latest");
+        }
+
+        second.Should().BeSameAs(first, "one client for the app");
+        handler.Requests.Should().ContainSingle();
     }
 
     [TestMethod]

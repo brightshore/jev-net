@@ -109,6 +109,29 @@ A `JsonObject` converts implicitly to a `Question` and is sent exactly as given 
 question types the API adds before this SDK models them. Only its structure is checked (`type` present; `choice`
 and `score` have `criteria`; a score rubric is nonempty); its schema is left to the API.
 
+## Dependency injection
+
+There is no `AddTypeSafeClient()` and no DI package — it would cost the one-dependency promise, and registering
+the client is five lines you can read:
+
+<!-- snippet: dependency-injection -->
+```csharp
+services.AddHttpClient("typesafe");       // pooling, DNS refresh, and any handlers your host adds
+services.AddSingleton<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
+{
+    ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
+    HttpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("typesafe"),
+    DisposeHttpClient = false,            // the factory owns it
+    LoggerFactory = sp.GetService<ILoggerFactory>(),
+}));
+```
+
+The client is thread-safe and meant to be a singleton. Hand it a factory-made `HttpClient` and your host's
+handlers, proxy settings and outbound logging all apply; `DisposeHttpClient = false` is what that case is for.
+One thing to know: a supplied `HttpClient` keeps **its own** redirect policy and its own `Timeout`, which caps
+every attempt (see [SECURITY.md](SECURITY.md)). If you would rather have configuration binding, named clients and
+options validation done for you, [TypeSafeAI.Net](https://github.com/Hawxy/TypeSafeAI.Net) ships exactly that.
+
 ## Testing code that uses the client
 
 `TypeSafeClient` implements `ITypeSafeClient`, so your code can take the interface and your tests can hand it a
