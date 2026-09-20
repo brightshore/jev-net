@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <!-- The library ships net8.0 AND net10.0, and leans on exactly the surface where runtimes diverge (`field`,
-         TimeProvider, SnakeCaseLower) - so both are TESTED, not just built. CI (where CI=true, and both runtimes
-         are installed) runs both; a local run uses net10.0 alone so it doesn't demand a second runtime. Force
-         either with -p:JevTestAllFrameworks=true|false. -->
-    <JevTestAllFrameworks Condition="'$(JevTestAllFrameworks)' == '' and '$(CI)' == 'true'">true</JevTestAllFrameworks>
+         TimeProvider, SnakeCaseLower) - so both are TESTED, not just built. That is an EXPLICIT opt-in,
+         -p:JevTestAllFrameworks=true, which this repo's workflows pass. It is deliberately not inferred from an
+         ambient CI variable: that made the framework set depend on the host (a fork's CI with only one SDK
+         failed to build; a CI exporting CI=1 silently skipped net8.0). Default: net10.0 alone, everywhere. -->
     <TargetFrameworks Condition="'$(JevTestAllFrameworks)' == 'true'">net8.0;net10.0</TargetFrameworks>
     <TargetFramework Condition="'$(JevTestAllFrameworks)' != 'true'">net10.0</TargetFramework>
     <!-- Microsoft Testing Platform, like every other MSTest project here: the project is its own executable. -->
