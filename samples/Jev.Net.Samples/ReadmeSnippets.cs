@@ -67,12 +67,25 @@ internal static class ReadmeSnippets
     public static IServiceCollection DependencyInjection(IServiceCollection services)
     {
         #region snippet:dependency-injection
-        services.AddHttpClient("typesafe");       // pooling, DNS refresh, and any handlers your host adds
         services.AddSingleton<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
         {
             ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
+            LoggerFactory = sp.GetService<ILoggerFactory>(),
+        }));
+        #endregion
+
+        return services;
+    }
+
+    public static IServiceCollection DependencyInjectionWithFactory(IServiceCollection services)
+    {
+        #region snippet:dependency-injection-factory
+        services.AddHttpClient("typesafe");       // your host's handlers, proxy and outbound logging apply
+        services.AddTransient<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
+        {
+            ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
             HttpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("typesafe"),
-            DisposeHttpClient = false,            // the factory owns it
+            DisposeHttpClient = false,            // the factory owns the handler underneath
             LoggerFactory = sp.GetService<ILoggerFactory>(),
         }));
         #endregion
