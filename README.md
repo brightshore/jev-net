@@ -146,9 +146,9 @@ services.AddTransient<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClie
 
 Inject that one into scoped or transient services (a controller, a handler), not into a singleton — which would
 capture it and bring the problem back. A supplied `HttpClient` also keeps **its own** redirect policy and its own
-`Timeout`, which caps every attempt (see [SECURITY.md](SECURITY.md)). If you would rather have configuration
-binding, named clients and options validation done for you,
-[TypeSafeAI.Net](https://github.com/Hawxy/TypeSafeAI.Net) ships exactly that.
+`Timeout`, which caps every attempt (see [SECURITY.md](SECURITY.md)). If you would rather have this done for
+you, [TypeSafeAI.Net](https://github.com/Hawxy/TypeSafeAI.Net) ships an `AddTypeSafeClient()` that registers a typed
+client, binds its options from a configuration section, and hands back the `IHttpClientBuilder` to extend.
 
 ## Testing code that uses the client
 
