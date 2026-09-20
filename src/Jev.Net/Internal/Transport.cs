@@ -9,7 +9,8 @@ namespace Jev.Net.Internal;
 
 /// <summary>An immutable description of one HTTP request to send — possibly several times.</summary>
 internal sealed record PreparedRequest(
-    HttpMethod Method, Uri Url, IReadOnlyList<KeyValuePair<string, string>> Headers, byte[]? Content, TimeSpan Timeout)
+    HttpMethod Method, Uri Url, IReadOnlyList<KeyValuePair<string, string>> Headers, byte[]? Content, TimeSpan Timeout,
+    string Operation, string? Model = null)
 {
     public string Endpoint => $"{Method.Method} {Url.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped)}";
 }
@@ -28,7 +29,8 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
     public Config Config => config;
 
     public PreparedRequest Prepare(
-        HttpMethod method, string path, JsonNode? body, TimeSpan? timeout, IReadOnlyDictionary<string, string>? headers)
+        HttpMethod method, string path, JsonNode? body, TimeSpan? timeout, IReadOnlyDictionary<string, string>? headers,
+        string operation)
     {
         // Later entries win, case-insensitively: client defaults, then the call's extras, then the protected set.
         var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -74,11 +76,46 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             throw new TypeSafeException($"The base URL '{config.BaseUrl}' is not a valid absolute URL.", error);
         }
 
-        return new PreparedRequest(method, url, merged.ToList(), content, Timeouts.Checked(timeout ?? config.Timeout));
+        var model = body?["model"] is JsonValue modelNode && modelNode.TryGetValue<string>(out var modelName) ? modelName : null;
+        return new PreparedRequest(method, url, merged.ToList(), content, Timeouts.Checked(timeout ?? config.Timeout), operation, model);
     }
 
+    /// <summary>One SDK call: a span and the metrics around <see cref="SendCoreAsync{T}"/>, which does the work.
+    /// When nobody listens, StartActivity returns null and the instruments are no-ops.</summary>
     public async Task<T> SendAsync<T>(
         PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CancellationToken ct) where T : class
+    {
+        using var activity = TypeSafeTelemetry.Source.StartActivity($"{request.Method.Method} {request.Url.AbsolutePath}", ActivityKind.Client);
+        if (activity is not null)
+        {
+            activity.SetTag("jev_net.operation", request.Operation);
+            activity.SetTag("http.request.method", request.Method.Method);
+            activity.SetTag("server.address", request.Url.Host);
+            activity.SetTag("url.full", request.Url.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
+        }
+
+        var started = Stopwatch.GetTimestamp();
+        var attempts = new int[1];
+        T? result = null;
+        Exception? failure = null;
+        try
+        {
+            return result = await SendCoreAsync(request, overridePolicy, decode, attempts, ct).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            failure = error;
+            throw;
+        }
+        finally
+        {
+            TypeSafeTelemetry.Record(activity, request.Operation, request.Url, request.Model, Stopwatch.GetElapsedTime(started),
+                Math.Max(attempts[0], 1), result, failure);
+        }
+    }
+
+    private async Task<T> SendCoreAsync<T>(
+        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, int[] attempts, CancellationToken ct) where T : class
     {
         var policy = overridePolicy ?? retry;
         var started = _clock.GetTimestamp();
@@ -86,7 +123,7 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
 
         while (true)
         {
-            attempt++;
+            attempts[0] = ++attempt;
             Exception failure;
             try
             {

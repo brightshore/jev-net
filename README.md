@@ -185,6 +185,32 @@ not**: they are whatever state you sent. Don't enable Debug where that matters.
 
 Pin a model (`jev-1.13.0`, not `jev-latest`) wherever you have tuned thresholds against its probabilities.
 
+## Observability
+
+Traces and metrics come through `ActivitySource` and `Meter`, which ship in the .NET runtime — so
+OpenTelemetry support costs **no dependency**, and nothing at all when nobody is listening.
+
+<!-- snippet: telemetry -->
+```csharp
+services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddSource(TypeSafeTelemetry.ActivitySourceName))
+    .WithMetrics(metrics => metrics.AddMeter(TypeSafeTelemetry.MeterName));
+```
+
+One client span covers one SDK call *including its retries* (`http.request.resend_count`); the individual HTTP
+attempts appear beneath it from .NET's own `System.Net.Http` instrumentation. It carries the operation, status,
+requested and answering model, token counts and the `x-typesafe-request-id`.
+
+| Instrument | |
+| --- | --- |
+| `jev_net.client.request.duration` | Histogram, seconds — the whole call, waits included. Tagged with operation, status, `error.type`. |
+| `jev_net.client.retries` | Counter — attempts after the first. |
+| `jev_net.client.token.usage` | Counter — tagged `jev_net.token.type` = `input` \| `output`, and the answering model. |
+
+**Nothing you send is recorded** — no state, questions, answers or headers, and the URL is stripped of
+credentials and query. A failed span's description is a fixed `HTTP 429`, not the server's message, which could
+echo your request.
+
 ## Python SDK → Jev.Net
 
 If you know `typesafe-sdk`, you already know this. Everything in the left column behaves the same on the right.
@@ -229,6 +255,7 @@ If you know `typesafe-sdk`, you already know this. Everything in the left column
 * **Optional answers are marked, not inferred.** Python reads `Optional[...]`; here a property is required unless
   it carries `[OptionalAnswer]`. Nullability is metadata the trimmer removes, so inferring from it would make the
   same class validate differently in a Native AOT build.
+* **Traces and metrics** (`ActivitySource` / `Meter`) — upstream has neither; this is what a .NET service expects.
 * **`TimeProvider`** is accepted for the retry clock — a .NET addition. So are `ITypeSafeClient`,
   `result.UnmodeledAnswers` (the receiving half of raw questions), `ScoreAnswer.MostLikely` (the mode, beside the
   averaged `Score`) and `TypeSafeDefaults.SdkVersion`.

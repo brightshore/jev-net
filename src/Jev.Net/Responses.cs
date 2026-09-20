@@ -86,6 +86,10 @@ public abstract class TypeSafeResponse
         _raw ?? throw new TypeSafeException("The response was not created from a raw HTTP response.");
 
     internal void Attach(RawHttpResponse raw) => _raw = raw;
+
+    internal int? StatusCode => _raw?.StatusCode;
+
+    internal string? RequestIdOrNull => _raw is not null && _raw.Headers.TryGetValue(Protocol.RequestIdHeader, out var id) ? id : null;
 }
 
 /// <summary>
