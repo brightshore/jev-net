@@ -30,6 +30,9 @@ public sealed class TypeSafeClientOptions
 
     /// <summary>Optional custom message handler (the transport). Mutually exclusive with
     /// <see cref="HttpClient"/>; disposed when the SDK client is disposed.</summary>
+    /// <remarks>The SDK's own handler never follows redirects, so the bearer token is not replayed to another
+    /// host. A handler or <see cref="HttpClient"/> you supply keeps ITS redirect policy — and .NET's handlers
+    /// follow redirects by default. Set <c>AllowAutoRedirect = false</c> to match.</remarks>
     public HttpMessageHandler? Handler { get; init; }
 
     /// <summary>Optional <see cref="System.Net.Http.HttpClient"/> to send through. Mutually exclusive with

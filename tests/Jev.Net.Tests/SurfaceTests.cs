@@ -136,4 +136,26 @@ public sealed class SurfaceTests
         Score(1.7, (0, 0.1), (1, 0.1), (2, 0.8)).MostLikely.Should().Be(2);
         Score(0).MostLikely.Should().BeNull("no probabilities, no mode");
     }
+
+    [TestMethod]
+    public async Task MostLikely_Never_Names_A_Level_The_Rubric_Does_Not_Define()
+    {
+        // A malformed body: the legend defines 0 and 1, but the probabilities carry a stray 99 - and it is the
+        // biggest. Decoding still succeeds (as it does upstream); MostLikely must not return 99.
+        using var client = Clients.Create(_ => Http.Json(200, """
+            {"model": "m", "usage": {}, "answers": {"s": {"type": "score", "score": 0.4, "confidence": 0.5,
+              "legend": {"0": "low", "1": "high"}, "probabilities": {"0": 0.3, "1": 0.2, "99": 0.5}}}}
+            """));
+        var score = (await client.SystemOneAsync("x", Clients.OneQuestion)).Scores["s"];
+
+        score.Probabilities.Keys.Should().Contain(99, "the raw map is reported as sent");
+        score.MostLikely.Should().Be(0);
+        score.Legend.Should().ContainKey(score.MostLikely!.Value);
+
+        using var onlyStray = Clients.Create(_ => Http.Json(200, """
+            {"model": "m", "usage": {}, "answers": {"s": {"type": "score", "score": 0, "confidence": 0,
+              "legend": {"0": "low"}, "probabilities": {"7": 1.0}}}}
+            """));
+        (await onlyStray.SystemOneAsync("x", Clients.OneQuestion)).Scores["s"].MostLikely.Should().BeNull();
+    }
 }
