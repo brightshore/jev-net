@@ -139,11 +139,11 @@ internal static class ResponseDecoder
 {
     /// <summary>The envelope every endpoint shares: a non-2xx is the matching API exception; otherwise decode,
     /// then hang the raw HTTP response on anything that can carry it.</summary>
-    public static T Parse<T>(RawHttpResponse raw, Func<RawHttpResponse, T> decode) where T : class
+    public static T Parse<T>(RawHttpResponse raw, Func<RawHttpResponse, T> decode, TimeProvider clock) where T : class
     {
         if (!raw.IsSuccess)
         {
-            throw ErrorMessages.ApiError(raw.StatusCode, Json.Deserialize(raw.Content.Span), raw.Headers, raw.Endpoint);
+            throw ErrorMessages.ApiError(raw.StatusCode, Json.Deserialize(raw.Content.Span), raw.Headers, raw.Endpoint, clock);
         }
 
         var result = decode(raw);

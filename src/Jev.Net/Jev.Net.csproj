@@ -2,10 +2,6 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <!-- Turns on the trim, single-file and AOT analyzers; with warnings as errors, an AOT-unsafe call cannot
@@ -20,7 +16,7 @@
   <PropertyGroup>
     <PackageId>Jev.Net</PackageId>
     <!-- Overridden by the release workflow from the tag (Jev.Net@x.y.z); this is the local/dev value. -->
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Description>A lightweight, unofficial .NET client for the TypeSafe AI API (System One / Jev): typed Noul, Choice and Score questions, typed answers with calibrated probabilities, retries with Retry-After. One dependency. A faithful port of the official Python SDK - same request shape, error model and messages, validated by a mirror of its test suite.</Description>
     <Authors>Brightshore</Authors>
     <Copyright>Copyright (c) 2026 Brightshore</Copyright>
@@ -34,6 +30,12 @@
     <PackageReleaseNotes>https://github.com/brightshore/jev-net/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <!-- The API-break guard: `dotnet pack` diffs the public surface against the last published version and
+         fails on a breaking change (and on net8.0/net10.0 disagreeing with each other). Built into the SDK, so
+         it costs no PackageReference. Move the baseline forward when a release ships; a deliberate break is
+         a suppression file plus a major/minor bump, never a silent one. -->
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>0.2.0</PackageValidationBaselineVersion>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>

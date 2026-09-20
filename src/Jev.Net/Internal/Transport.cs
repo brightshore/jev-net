@@ -91,7 +91,7 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             try
             {
                 var raw = await AttemptAsync(request, attempt, ct).ConfigureAwait(false);
-                return ResponseDecoder.Parse(raw, decode);
+                return ResponseDecoder.Parse(raw, decode, _clock);
             }
             catch (Exception error) when (error is not OperationCanceledException && policy.Retryable(error))
             {

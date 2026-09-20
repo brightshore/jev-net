@@ -1,10 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <!-- The library ships net8.0 AND net10.0, and leans on exactly the surface where runtimes diverge (`field`,
+         TimeProvider, SnakeCaseLower) - so both are TESTED, not just built. CI (where CI=true, and both runtimes
+         are installed) runs both; a local run uses net10.0 alone so it doesn't demand a second runtime. Force
+         either with -p:JevTestAllFrameworks=true|false. -->
+    <JevTestAllFrameworks Condition="'$(JevTestAllFrameworks)' == '' and '$(CI)' == 'true'">true</JevTestAllFrameworks>
+    <TargetFrameworks Condition="'$(JevTestAllFrameworks)' == 'true'">net8.0;net10.0</TargetFrameworks>
+    <TargetFramework Condition="'$(JevTestAllFrameworks)' != 'true'">net10.0</TargetFramework>
     <!-- Microsoft Testing Platform, like every other MSTest project here: the project is its own executable. -->
     <OutputType>Exe</OutputType>
     <EnableMSTestRunner>true</EnableMSTestRunner>

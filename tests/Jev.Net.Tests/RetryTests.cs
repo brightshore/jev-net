@@ -210,6 +210,25 @@ public sealed class RetryTests
     }
 
     [TestMethod]
+    public async Task The_Exceptions_RetryAfter_Reads_The_Same_Clock_The_Retry_Loop_Waits_On()
+    {
+        // The manual clock sits in 1970; the header names a moment ten seconds after it. Read against the
+        // SYSTEM clock that date is decades in the past, i.e. "wait 0" - which is what the public property used
+        // to say while the retry loop, on the injected clock, correctly waited ten seconds.
+        var clock = new ManualClock(DateTimeOffset.FromUnixTimeSeconds(1_000_000));
+        var inTenSeconds = DateTimeOffset.FromUnixTimeSeconds(1_000_010).ToString("r", CultureInfo.InvariantCulture);
+        var delays = new List<TimeSpan>();
+        var handler = new StubHandler(_ => Http.Json(429, "{}", ("Retry-After", inTenSeconds)));
+        using var client = Clients.Create(handler, clock: clock, retry: new RetryPolicy { MaxRetries = 1, Timeout = null },
+            delay: (wait, _) => { delays.Add(wait); return Task.CompletedTask; });
+
+        var caught = (await client.Invoking(c => c.Models.ListAsync()).Should().ThrowAsync<TypeSafeRateLimitException>()).Which;
+
+        delays.Should().Equal(TimeSpan.FromSeconds(10));
+        caught.RetryAfter.Should().Be(TimeSpan.FromSeconds(10), "the property and the wait must agree");
+    }
+
+    [TestMethod]
     public void Wait_Options()
     {
         var error = new TypeSafeRateLimitException(429, null, Headers(("Retry-After", "5")));

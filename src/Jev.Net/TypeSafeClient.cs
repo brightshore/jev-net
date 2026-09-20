@@ -51,9 +51,8 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
         }
         else
         {
-            // Redirects are not followed (a 302 is an error to report, as upstream), and the per-attempt
-            // deadline is ours — HttpClient's own timeout would otherwise cap a longer per-call override.
-            _http = new HttpClient(options.Handler ?? new SocketsHttpHandler { AllowAutoRedirect = false }, disposeHandler: true)
+            // The per-attempt deadline is ours - HttpClient's own timeout would otherwise cap a longer per-call one.
+            _http = new HttpClient(options.Handler ?? CreateDefaultHandler(), disposeHandler: true)
             {
                 Timeout = Timeout.InfiniteTimeSpan,
             };
@@ -63,6 +62,22 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
         _transport = new Transport(_http, config, options.Retry ?? new RetryPolicy(), log, options);
         Models = new ModelsResource(_transport);
     }
+
+    /// <summary>
+    /// The handler behind a client that was given neither a <see cref="TypeSafeClientOptions.Handler"/> nor an
+    /// <see cref="TypeSafeClientOptions.HttpClient"/>. Three settings, each a default that bites:
+    /// </summary>
+    internal static SocketsHttpHandler CreateDefaultHandler() => new()
+    {
+        // A 302 is an error to report, as upstream - not something to follow with the bearer token attached.
+        AllowAutoRedirect = false,
+        // .NET's default is None: no Accept-Encoding goes out and nothing comes back compressed. httpx asks
+        // for gzip/deflate by default, so without this the port is chattier than the library it ports.
+        AutomaticDecompression = System.Net.DecompressionMethods.All,
+        // The default is Infinite: a long-lived client never re-resolves DNS, and keeps talking to an
+        // address the service has moved away from.
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+    };
 
     /// <summary>The Models API resource.</summary>
     public ModelsResource Models { get; }
