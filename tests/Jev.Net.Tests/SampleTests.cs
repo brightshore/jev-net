@@ -88,12 +88,60 @@ public sealed class SampleTests
     [DataRow("candidate_-1")]
     [DataRow("candidate_99")]
     [DataRow("candidate_")]
+    [DataRow("candidate_000")]   // parses to 0, but it is not a label we offered
+    [DataRow("candidate_04")]
     [DataRow("something_else")]
     public async Task A_Label_That_Was_Never_Offered_Means_No_Value_Not_A_Crash(string label)
     {
         using var client = Clients.Create(_ => Http.Json(200, Answers(
             """{"total": {"type": "choice", "choice": "<<0>>", "confidence": 0.9, "probabilities": {}}}""".With(0, label))));
         (await ValueSelection.InvoiceTotalAsync(client, Invoice)).Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task A_Response_With_No_Total_Answer_Means_No_Value()
+    {
+        using var client = Clients.Create(_ => Http.Json(200, Answers("{}")));
+        (await ValueSelection.InvoiceTotalAsync(client, Invoice)).Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task A_One_Digit_Fraction_Is_Not_Cut_Off()
+    {
+        var handler = new StubHandler(request =>
+        {
+            request.Json!["questions"]!["total"]!["criteria"]!.AsObject().Where(c => c.Key != "none")
+                .Select(c => c.Value!.GetValue<string>()).Should().Equal(
+                    "The amount $10.5, where it appears in the invoice", "The amount $3, where it appears in the invoice");
+            return Http.Json(200, Answers("""{"total": {"type": "choice", "choice": "candidate_0", "confidence": 0.9, "probabilities": {}}}"""));
+        });
+        using var client = Clients.Create(handler);
+
+        (await ValueSelection.InvoiceTotalAsync(client, "Total $10.5 (includes $3 shipping).")).Should().Be(10.5m);
+    }
+
+    [TestMethod]
+    public async Task An_Even_Split_On_A_Speculative_Question_Is_Not_A_Yes()
+    {
+        using var client = Clients.Create(_ => Http.Json(200, Intent("refund", 0.95, refundFull: 0.5)));
+        (await IntentRouting.RouteAsync(client, "refund?")).Should().Be(new IntentRouting.Refund(WantsFullAmount: false));
+    }
+
+    [TestMethod]
+    public async Task The_Review_Reason_Reads_The_Same_In_Every_Culture()
+    {
+        var before = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+            using var client = Clients.Create(_ => Http.Json(200, Intent("refund", 0.41)));
+            (await IntentRouting.RouteAsync(client, "hmm")).Should().BeOfType<IntentRouting.HumanReview>()
+                .Which.Why.Should().Contain("0.41").And.NotContain("0,41");
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = before;
+        }
     }
 
     [TestMethod]
