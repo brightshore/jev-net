@@ -1,4 +1,6 @@
 using Jev.Net.Samples;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Jev.Net.Tests;
 
@@ -197,6 +199,57 @@ public sealed class SampleTests
         CompositeScoring.Rank(judged, CompositeScoring.Weights.Support).Select(j => j.Ticket).Should().Equal("outage", "typo");
         CompositeScoring.Rank(judged, CompositeScoring.Weights.QuickWins).Select(j => j.Ticket).Should().Equal("typo", "outage");
         handler.Requests.Should().HaveCount(2, "two tickets judged once each - re-ranking cost nothing");
+    }
+
+    private static ServiceCollection WithConfiguredKey()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["TypeSafe:ApiKey"] = "key-from-configuration" }).Build());
+        return services;
+    }
+
+    [TestMethod]
+    public async Task The_Singleton_Registration_Resolves_One_Client_With_The_Configured_Key()
+    {
+        var services = WithConfiguredKey();
+        ReadmeSnippets.DependencyInjection(services);
+
+        await using var provider = services.BuildServiceProvider();
+        var client = provider.GetRequiredService<ITypeSafeClient>();
+
+        provider.GetRequiredService<ITypeSafeClient>().Should().BeSameAs(client, "one client for the app");
+        client.Should().BeOfType<TypeSafeClient>("built from configuration without throwing - so the key was found");
+    }
+
+    [TestMethod]
+    public async Task The_Factory_Registration_Is_Transient_So_The_Factory_Can_Rotate_Handlers()
+    {
+        // The README's factory registration, verbatim, in a real container - with the named client's primary
+        // handler swapped for a stub, which is exactly the seam IHttpClientFactory exists to offer.
+        var handler = new StubHandler(request =>
+        {
+            request.Header("authorization").Should().Be("Bearer key-from-configuration");
+            return Http.Json(200, ClientTests.Result);
+        });
+        var services = WithConfiguredKey();
+        ReadmeSnippets.DependencyInjectionWithFactory(services);
+        services.AddHttpClient("typesafe").ConfigurePrimaryHttpMessageHandler(() => handler);
+
+        await using var provider = services.BuildServiceProvider();
+        var first = provider.GetRequiredService<ITypeSafeClient>();
+        var second = provider.GetRequiredService<ITypeSafeClient>();
+
+        // The point of the whole section: a captured client would pin ONE HttpClient for the life of the app and
+        // the factory could never hand out a rotated handler. Transient means every resolution asks it again.
+        second.Should().NotBeSameAs(first);
+        (await first.SystemOneAsync("x", Clients.OneQuestion)).Model.Should().Be("jev-latest");
+        (await second.SystemOneAsync("x", Clients.OneQuestion)).Model.Should().Be("jev-latest");
+        handler.Requests.Should().HaveCount(2);
+
+        // Disposing one SDK client must not take the factory's shared handler down with it.
+        ((IDisposable)first).Dispose();
+        (await second.SystemOneAsync("x", Clients.OneQuestion)).Model.Should().Be("jev-latest");
     }
 
     [TestMethod]

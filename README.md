@@ -109,6 +109,47 @@ A `JsonObject` converts implicitly to a `Question` and is sent exactly as given 
 question types the API adds before this SDK models them. Only its structure is checked (`type` present; `choice`
 and `score` have `criteria`; a score rubric is nonempty); its schema is left to the API.
 
+## Dependency injection
+
+There is no `AddTypeSafeClient()` and no DI package — it would cost the one-dependency promise, and registering
+the client is a few lines you can read. The client is thread-safe and cheap to construct.
+
+**A singleton, on the SDK's own handler.** This is the one to reach for. The handler the SDK builds for itself
+recycles pooled connections every two minutes, so a client that lives as long as your app still follows DNS
+changes — no factory needed.
+
+<!-- snippet: dependency-injection -->
+```csharp
+services.AddSingleton<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
+{
+    ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
+    LoggerFactory = sp.GetService<ILoggerFactory>(),
+}));
+```
+
+**Through `IHttpClientFactory`, when you want your host's handlers** — a proxy, extra resilience, outbound logging.
+Register it **transient**, not singleton: a singleton would hold the one `HttpClient` it was built with forever,
+and the factory could never rotate the handler underneath it — quietly undoing the DNS refresh the factory exists
+to provide.
+
+<!-- snippet: dependency-injection-factory -->
+```csharp
+services.AddHttpClient("typesafe");       // your host's handlers, proxy and outbound logging apply
+services.AddTransient<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
+{
+    ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
+    HttpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("typesafe"),
+    DisposeHttpClient = false,            // the factory owns the handler underneath
+    LoggerFactory = sp.GetService<ILoggerFactory>(),
+}));
+```
+
+Inject that one into scoped or transient services (a controller, a handler), not into a singleton — which would
+capture it and bring the problem back. A supplied `HttpClient` also keeps **its own** redirect policy and its own
+`Timeout`, which caps every attempt (see [SECURITY.md](SECURITY.md)). If you would rather have this done for
+you, [TypeSafeAI.Net](https://github.com/Hawxy/TypeSafeAI.Net) ships an `AddTypeSafeClient()` that registers a typed
+client, binds its options from a configuration section, and hands back the `IHttpClientBuilder` to extend.
+
 ## Testing code that uses the client
 
 `TypeSafeClient` implements `ITypeSafeClient`, so your code can take the interface and your tests can hand it a

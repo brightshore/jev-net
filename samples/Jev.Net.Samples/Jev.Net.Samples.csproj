@@ -21,4 +21,12 @@
     <ProjectReference Include="..\..\src\Jev.Net\Jev.Net.csproj" />
   </ItemGroup>
 
+  <!-- For the README's dependency-injection snippet ONLY, so that it is compiled against the real hosting APIs
+       rather than look-alikes. These belong to the SAMPLES: the library still has exactly one dependency, and
+       the nuspec check and DependencyTests keep it that way. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
+  </ItemGroup>
+
 </Project>

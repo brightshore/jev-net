@@ -1,4 +1,7 @@
 using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System.Text.Json.Serialization;
 
 namespace Jev.Net.Samples;
@@ -59,6 +62,35 @@ internal static class ReadmeSnippets
             .WithTracing(tracing => tracing.AddSource(TypeSafeTelemetry.ActivitySourceName))
             .WithMetrics(metrics => metrics.AddMeter(TypeSafeTelemetry.MeterName));
         #endregion
+    }
+
+    public static IServiceCollection DependencyInjection(IServiceCollection services)
+    {
+        #region snippet:dependency-injection
+        services.AddSingleton<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
+        {
+            ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
+            LoggerFactory = sp.GetService<ILoggerFactory>(),
+        }));
+        #endregion
+
+        return services;
+    }
+
+    public static IServiceCollection DependencyInjectionWithFactory(IServiceCollection services)
+    {
+        #region snippet:dependency-injection-factory
+        services.AddHttpClient("typesafe");       // your host's handlers, proxy and outbound logging apply
+        services.AddTransient<ITypeSafeClient>(sp => new TypeSafeClient(new TypeSafeClientOptions
+        {
+            ApiKey = sp.GetRequiredService<IConfiguration>()["TypeSafe:ApiKey"],
+            HttpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("typesafe"),
+            DisposeHttpClient = false,            // the factory owns the handler underneath
+            LoggerFactory = sp.GetService<ILoggerFactory>(),
+        }));
+        #endregion
+
+        return services;
     }
 
     public static SystemOneResponse Testing(string recordedJson)
