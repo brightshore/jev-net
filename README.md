@@ -164,12 +164,6 @@ The suite was mutation-checked: the client was broken on purpose in nine places 
 budget, header redaction, strict number decoding, node cloning, jitter, `retry-after-ms` precedence,
 cancellation-vs-timeout, unknown answer types) and every break is caught.
 
-## Releasing
-
-Versioning is [changesets](.changeset/README.md): `changerig add` in the PR, `shiprig release` on `main`. That
-pushes a `Jev.Net@x.y.z` tag, and the tag runs `release.yml`, which packs and publishes to nuget.org through
-**trusted publishing** (OIDC) — there is no API key in this repository.
-
 ## License
 
 MIT. See [NOTICE](NOTICE) for the upstream attribution.
