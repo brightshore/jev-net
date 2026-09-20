@@ -101,6 +101,10 @@ public sealed class Noul : Question
 }
 
 /// <summary>A question that selects between named alternatives.</summary>
+/// <remarks>The API documents a maximum of 255 options. That is not checked here — like the Python SDK, this
+/// client leaves schema limits to the API, which answers with a 422 naming the field
+/// (<see cref="TypeSafeUnprocessableEntityException"/>). Include a "none of these" option when nothing may fit:
+/// without one the model must pick something, and will.</remarks>
 public sealed class Choice : Question
 {
     private IReadOnlyDictionary<string, JsonContent?> _criteria;
@@ -163,6 +167,9 @@ public sealed class Choice : Question
 }
 
 /// <summary>A question that assigns a score using an ordered rubric.</summary>
+/// <remarks>The API documents 2 to 10 levels. Only emptiness is checked here (as in the Python SDK); anything
+/// else is left to the API, whose published schema and prose do not quite agree on the lower bound — so a
+/// client-side rule could refuse a request the service would have accepted.</remarks>
 public sealed class Score : Question
 {
     private IReadOnlyList<JsonContent> _criteria;

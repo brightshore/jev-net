@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Two jobs. The README's code blocks are REGIONS of ReadmeSnippets.cs, so they are compiled on every build
+       and a test fails if the README and the source drift apart (the Python SDK executes its README; this is
+       the same promise). And three small programs in the shape of TypeSafe's cookbooks, runnable against the
+       real API (see Program.cs for how to run one). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Follows the test project, which references it and runs on both frameworks in CI. -->
+    <JevTestAllFrameworks Condition="'$(JevTestAllFrameworks)' == '' and '$(CI)' == 'true'">true</JevTestAllFrameworks>
+    <TargetFrameworks Condition="'$(JevTestAllFrameworks)' == 'true'">net8.0;net10.0</TargetFrameworks>
+    <TargetFramework Condition="'$(JevTestAllFrameworks)' != 'true'">net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Jev.Net.Samples</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jev.Net.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Jev.Net\Jev.Net.csproj" />
+  </ItemGroup>
+
+</Project>

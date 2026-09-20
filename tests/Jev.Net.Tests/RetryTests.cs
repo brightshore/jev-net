@@ -105,6 +105,7 @@ public sealed class RetryTests
     [DataRow(500, 3)]
     [DataRow(503, 3)]
     [DataRow(599, 3)]
+    [DataRow(529, 3)] // the API's documented "service overloaded": retried, and surfaced as a server error
     [DataRow(400, 1)]
     [DataRow(401, 1)]
     [DataRow(403, 1)]
@@ -120,6 +121,7 @@ public sealed class RetryTests
         var caught = (await client.Invoking(c => c.Models.ListAsync()).Should().ThrowAsync<TypeSafeApiException>()).Which;
 
         caught.Status.Should().Be(status);
+        if (status >= 500) caught.Should().BeOfType<TypeSafeInternalServerException>();
         handler.Requests.Select(r => r.Header("x-typesafe-retry-count")).Should().Equal(new string?[] { null, "1", "2" }.Take(attempts));
     }
 
