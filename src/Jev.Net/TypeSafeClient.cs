@@ -95,9 +95,11 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
     /// <summary>The response body read into any type of yours, using source-generated JSON metadata. Trim- and
     /// AOT-safe. The API spells its fields in snake_case: give your context
     /// <c>PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower</c>.</summary>
+    /// <remarks><paramref name="options"/> stays the third parameter on every overload, and is not optional
+    /// here: that is what keeps <c>SystemOneAsync&lt;T&gt;(state, questions, null, token)</c> unambiguous.</remarks>
     public Task<TResponse> SystemOneAsync<TResponse>(
-        JsonContent state, IReadOnlyDictionary<string, Question> questions, JsonTypeInfo<TResponse> responseTypeInfo,
-        SystemOneOptions? options = null, CancellationToken cancellationToken = default) where TResponse : class
+        JsonContent state, IReadOnlyDictionary<string, Question> questions, SystemOneOptions? options,
+        JsonTypeInfo<TResponse> responseTypeInfo, CancellationToken cancellationToken = default) where TResponse : class
     {
         ArgumentNullException.ThrowIfNull(responseTypeInfo);
         return SendSystemOne(state, questions, options, raw => ResponseDecoder.Custom(raw, responseTypeInfo), cancellationToken);
@@ -108,8 +110,8 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
     [RequiresUnreferencedCode(ReflectionJson)]
     [RequiresDynamicCode(ReflectionJson)]
     public Task<TResponse> SystemOneAsync<TResponse>(
-        JsonContent state, IReadOnlyDictionary<string, Question> questions, JsonSerializerOptions responseSerializerOptions,
-        SystemOneOptions? options = null, CancellationToken cancellationToken = default) where TResponse : class
+        JsonContent state, IReadOnlyDictionary<string, Question> questions, SystemOneOptions? options,
+        JsonSerializerOptions responseSerializerOptions, CancellationToken cancellationToken = default) where TResponse : class
     {
         ArgumentNullException.ThrowIfNull(responseSerializerOptions);
         return SendSystemOne(state, questions, options, raw => ResponseDecoder.Custom<TResponse>(raw, responseSerializerOptions), cancellationToken);

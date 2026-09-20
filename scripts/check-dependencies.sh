@@ -1,32 +1,40 @@
 #!/usr/bin/env bash
 # "One dependency" is a promise in the README, so it is checked against the thing people actually install:
-# the packed .nupkg's nuspec, not the csproj. Fails if any target framework declares anything other than
-# exactly Microsoft.Extensions.Logging.Abstractions.
+# the packed .nupkg's nuspec, not the csproj. EACH target-framework group must declare exactly
+# Microsoft.Extensions.Logging.Abstractions and nothing else — per group, not in aggregate, so a package that
+# doubles up in one framework and drops it in another cannot average its way through.
 #
-#   scripts/check-dependencies.sh artifacts/Jev.Net.0.1.0.nupkg
+#   scripts/check-dependencies.sh artifacts/Jev.Net.0.2.0.nupkg
 set -euo pipefail
 
 pkg="${1:?usage: check-dependencies.sh <path-to.nupkg>}"
 allowed='Microsoft.Extensions.Logging.Abstractions'
 
-nuspec=$(unzip -p "$pkg" '*.nuspec')
-groups=$(printf '%s' "$nuspec" | grep -c '<group targetFramework=' || true)
-deps=$(printf '%s' "$nuspec" | grep -o '<dependency id="[^"]*"' | sed 's/.*id="//; s/"$//' | sort | uniq -c | sed 's/^ *//')
+# One line per group: "<framework>|<id> <id> ...". Self-closing groups (<group … />) have no dependencies.
+groups=$(unzip -p "$pkg" '*.nuspec' | tr -d '\r' | tr '\n' ' ' \
+  | sed 's/<group /\n<group /g' | grep '^<group ' \
+  | sed -E 's/<\/group>.*//' \
+  | while IFS= read -r block; do
+      tfm=$(printf '%s' "$block" | sed -E 's/^<group targetFramework="([^"]*)".*/\1/')
+      ids=$(printf '%s' "$block" | grep -o '<dependency id="[^"]*"' | sed 's/.*id="//; s/"$//' | sort | tr '\n' ' ' | sed 's/ $//' || true)
+      printf '%s|%s\n' "$tfm" "$ids"
+    done)
 
-echo "target frameworks: $groups"
-echo "dependencies (count id):"
-printf '%s\n' "$deps" | sed 's/^/  /'
+[ -n "$groups" ] || { echo "FAIL: no dependency groups found in the nuspec - the check read nothing" >&2; exit 1; }
 
-[ "$groups" -ge 1 ] || { echo "FAIL: no dependency groups found in the nuspec - the check read nothing" >&2; exit 1; }
+fail=0
+while IFS='|' read -r tfm ids; do
+  if [ "$ids" = "$allowed" ]; then
+    echo "  ok   $tfm: $ids"
+  else
+    echo "  FAIL $tfm: expected exactly [$allowed], found [${ids:-nothing}]" >&2
+    fail=1
+  fi
+done <<< "$groups"
 
-unexpected=$(printf '%s\n' "$deps" | awk '{print $2}' | grep -vx "$allowed" || true)
-if [ -n "$unexpected" ]; then
-  echo "FAIL: unexpected dependency: $unexpected" >&2
-  echo "      Jev.Net promises exactly one ($allowed). If this is deliberate, it is a README change first." >&2
+if [ "$fail" != 0 ]; then
+  echo "Jev.Net promises exactly one dependency per target framework. If this is deliberate, it is a README change first." >&2
   exit 1
 fi
-
-count=$(printf '%s\n' "$deps" | awk -v a="$allowed" '$2==a {print $1}')
-[ "${count:-0}" = "$groups" ] || { echo "FAIL: expected $allowed once per target framework ($groups), saw ${count:-0}" >&2; exit 1; }
 
 echo "ok: exactly one dependency, in every target framework"

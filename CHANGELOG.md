@@ -4,9 +4,11 @@
 
 - **Trim- and Native AOT-compatible.** The library builds with the trim and AOT analyzers as errors, and a smoke
   app is published as a native binary and run in CI on Linux and Windows.
-- `SystemOneAsync(…, JsonTypeInfo<T>)` and `JsonContent.From(value, JsonTypeInfo<T>)` for source-generated JSON.
+- `SystemOneAsync(state, questions, options, JsonTypeInfo<T>)` and `JsonContent.From(value, JsonTypeInfo<T>)` for
+  source-generated JSON.
 - **Changed:** reading the body into an arbitrary type now takes its JSON settings explicitly —
-  `SystemOneAsync<T>(state, questions, ResponseJson.SnakeCase)` (reflection) or the `JsonTypeInfo<T>` overload.
+  `SystemOneAsync<T>(state, questions, options, ResponseJson.SnakeCase)` (reflection) or the `JsonTypeInfo<T>` overload.
+  `options` stays the third parameter on every overload, so passing `null` for it is never ambiguous.
   `SystemOneAsync<T>(state, questions)` is now for `SystemOneResponse` subclasses only, which need a public
   parameterless constructor.
 - **Changed:** an answer property on a `SystemOneResponse` subclass is required unless marked

@@ -79,8 +79,8 @@ To read the body into a type that is entirely yours, pass JSON metadata — sour
 apps, or reflection-based when that doesn't matter:
 
 ```csharp
-var mine = await client.SystemOneAsync(state, questions, MyJsonContext.Default.MyEnvelope);   // AOT-safe
-var mine = await client.SystemOneAsync<MyEnvelope>(state, questions, ResponseJson.SnakeCase); // reflection
+var mine = await client.SystemOneAsync(state, questions, options: null, MyJsonContext.Default.MyEnvelope);   // AOT-safe
+var mine = await client.SystemOneAsync<MyEnvelope>(state, questions, options: null, ResponseJson.SnakeCase); // reflection
 ```
 
 ## State, instructions and criteria: `JsonContent`
@@ -165,7 +165,7 @@ If you know `typesafe-sdk`, you already know this. Everything in the left column
 | `result.answers`, `.model`, `.usage.input_tokens` | `result.Answers`, `.Model`, `.Usage.InputTokens` |
 | `result.request_id`, `result.raw_http_response` | `result.RequestId`, `result.RawHttpResponse` |
 | `response_model=MyResponse` (a `SystemOneResponse` subclass with answer fields) | `SystemOneAsync<MyResponse>(…)` |
-| `response_model=AnyPydanticModel` | `SystemOneAsync(…, JsonTypeInfo<T>)` or `SystemOneAsync<T>(…, JsonSerializerOptions)` |
+| `response_model=AnyPydanticModel` | `SystemOneAsync(state, questions, options, JsonTypeInfo<T>)` or `SystemOneAsync<T>(state, questions, options, JsonSerializerOptions)` |
 | `RetryPolicy(max_retries, backoff_initial, backoff_max, backoff_jitter, http_statuses, respect_retry_after, api_connection_error, api_timeout_error, exceptions, predicate, timeout)` | `RetryPolicy { MaxRetries, BackoffInitial, BackoffMax, BackoffJitter, HttpStatuses, RespectRetryAfter, ApiConnectionError, ApiTimeoutError, Exceptions, Predicate, Timeout }` — same defaults |
 | `TypeSafeError` → `TypeSafeAPIError` → `…BadRequestError`, `…RateLimitError`, … | `TypeSafeException` → `TypeSafeApiException` → `…BadRequestException`, `…RateLimitException`, … |
 | `error.status`, `.body`, `.headers`, `.endpoint`, `.request_id`, `.retry_after_ms`, `.field_path` | `error.Status`, `.Body`, `.Headers`, `.Endpoint`, `.RequestId`, `.RetryAfter`, `.FieldPath` |

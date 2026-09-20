@@ -207,6 +207,22 @@ public sealed class ResponseTests
     }
 
     [TestMethod]
+    public async Task A_Null_Options_Argument_Is_Never_Ambiguous()
+    {
+        // A COMPILE-TIME guard as much as a run-time one. Passing null for options in order to reach the
+        // cancellation token positionally is an ordinary thing to write, and with the JSON-metadata
+        // overloads' extra parameter in third place it was CS0121 on the typed path. Options is third on
+        // every overload so that these lines keep compiling.
+        using var client = Clients.Create(_ => Http.Json(200, ClientTests.Result));
+        var token = CancellationToken.None;
+
+        (await client.SystemOneAsync("x", Clients.OneQuestion, null, token)).Model.Should().Be("jev-latest");
+        (await client.SystemOneAsync<TicketResponse>("x", Clients.OneQuestion, null)).Spam.Noul.Should().Be(0.98);
+        (await client.SystemOneAsync<TicketResponse>("x", Clients.OneQuestion, null, token)).Spam.Noul.Should().Be(0.98);
+        (await client.SystemOneAsync("x", Clients.OneQuestion, null, TestJsonContext.Default.Envelope, token)).Model.Should().Be("jev-latest");
+    }
+
+    [TestMethod]
     public async Task A_Derived_Response_Whose_Answer_Is_Missing_Or_The_Wrong_Kind_Is_A_Validation_Error()
     {
         using var client = Clients.Create(_ => Http.Json(200, ClientTests.Result));
@@ -225,8 +241,8 @@ public sealed class ResponseTests
     public async Task Any_Other_Type_Is_Deserialized_From_The_Body_With_A_Located_Failure(string how)
     {
         Task<Envelope> Ask(TypeSafeClient client) => how == "reflection"
-            ? client.SystemOneAsync<Envelope>("x", Clients.OneQuestion, ResponseJson.SnakeCase)
-            : client.SystemOneAsync("x", Clients.OneQuestion, TestJsonContext.Default.Envelope);
+            ? client.SystemOneAsync<Envelope>("x", Clients.OneQuestion, null, ResponseJson.SnakeCase)
+            : client.SystemOneAsync("x", Clients.OneQuestion, null, TestJsonContext.Default.Envelope);
 
         using var ok = Clients.Create(_ => Http.Json(200, ClientTests.Result, ("x-typesafe-request-id", "req-9")));
         (await Ask(ok)).Should().Be(new Envelope("jev-latest", new EnvelopeUsage(12, 3)));

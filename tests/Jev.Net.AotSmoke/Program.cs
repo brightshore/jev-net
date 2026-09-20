@@ -66,7 +66,7 @@ Check("derived response: [JsonPropertyName] honoured", typed.HowUrgent?.Score ==
 Check("derived response: [OptionalAnswer] left null", typed.NotAsked is null);
 
 // 3. A caller's own type, through source-generated metadata.
-var envelope = await client.SystemOneAsync(state, questions, SmokeJson.Default.Envelope);
+var envelope = await client.SystemOneAsync(state, questions, null, SmokeJson.Default.Envelope);
 Check("JsonTypeInfo response", envelope is { Model: "jev-latest", Usage.InputTokens: 12 });
 
 // 4. Failures keep their shape: mapping, message text, and the located validation path.
