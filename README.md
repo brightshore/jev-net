@@ -135,7 +135,7 @@ cookbooks — each keeps the workflow in code and asks the model only for the ju
 | [`CompositeScoring`](samples/Jev.Net.Samples/CompositeScoring.cs) | Score narrow dimensions once, then re-rank under different weights with no further calls. |
 
 ```bash
-dotnet run --project samples/Jev.Net.Samples -- routing     # needs TYPESAFE_API_KEY; the tests run all three offline
+dotnet run --project samples/Jev.Net.Samples -f net10.0 -- routing     # needs TYPESAFE_API_KEY; the tests run all three offline
 ```
 
 The C# blocks in this README are regions of [`ReadmeSnippets.cs`](samples/Jev.Net.Samples/ReadmeSnippets.cs) in

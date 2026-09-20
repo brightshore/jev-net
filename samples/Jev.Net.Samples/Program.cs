@@ -1,7 +1,8 @@
 using Jev.Net;
 using Jev.Net.Samples;
 
-// dotnet run --project samples/Jev.Net.Samples -- routing|total|ranking
+// dotnet run --project samples/Jev.Net.Samples -f net10.0 -- routing|total|ranking
+// (-f because the project targets two frameworks when JevTestAllFrameworks is set, and `dotnet run` then insists.)
 // These call the REAL API and spend (a very few) tokens, so they need TYPESAFE_API_KEY.
 
 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(TypeSafeDefaults.ApiKeyEnv)))
@@ -39,6 +40,6 @@ switch (args.FirstOrDefault())
         return 0;
 
     default:
-        Console.Error.WriteLine("Usage: dotnet run --project samples/Jev.Net.Samples -- routing|total|ranking");
+        Console.Error.WriteLine("Usage: dotnet run --project samples/Jev.Net.Samples -f net10.0 -- routing|total|ranking");
         return 2;
 }
