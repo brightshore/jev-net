@@ -339,7 +339,7 @@ public sealed class ClientTests
             request.Url.ToString().Should().Be("https://example.test/prefix/v1/systemone");
             request.Header("authorization").Should().Be("Bearer test-key");
             request.Header("accept").Should().Be("application/json");
-            request.Header("user-agent").Should().StartWith("jev-net/0.1.0");
+            request.Header("user-agent").Should().MatchRegex(@"^jev-net/\d+\.\d+\.\d+");
             request.Header("x-typesafe-sdk").Should().Be(request.Header("user-agent"));
             request.Header("x-typesafe-runtime").Should().StartWith("dotnet/");
             request.Headers.Should().NotContainKey("x-typesafe-retry-count");

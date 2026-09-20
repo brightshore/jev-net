@@ -1,6 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Jev.Net;
 
@@ -10,7 +12,7 @@ namespace Jev.Net;
 /// content (nulls remain valid NESTED inside an object or array).
 ///
 /// <para>Converts implicitly from <see cref="string"/> and from <see cref="JsonNode"/>
-/// (<see cref="JsonObject"/>, <see cref="JsonArray"/>); <see cref="From{T}"/> serializes anything else.
+/// (<see cref="JsonObject"/>, <see cref="JsonArray"/>); <c>JsonContent.From</c> serializes anything else.
 /// The node is deep-cloned on the way in and again on the way out, so neither the caller's tree nor a
 /// question that is reused across requests is ever re-parented.</para>
 /// </summary>
@@ -46,8 +48,12 @@ public sealed class JsonContent
     /// <summary>
     /// Serialize <paramref name="value"/> (a dictionary, a list, a record, an anonymous type…) into content.
     /// </summary>
+    /// <remarks>Reflection-based. In a trimmed or Native AOT app use the <see cref="JsonTypeInfo{T}"/> overload,
+    /// or build a <see cref="JsonObject"/>/<see cref="JsonArray"/> directly.</remarks>
     /// <exception cref="TypeSafeException">The value cannot be encoded as JSON, or encodes to something
     /// that is not text, an object, or an array.</exception>
+    [RequiresUnreferencedCode(TypeSafeClient.ReflectionJson)]
+    [RequiresDynamicCode(TypeSafeClient.ReflectionJson)]
     public static JsonContent From<T>(T value, JsonSerializerOptions? options = null)
     {
         JsonNode? node;
@@ -68,11 +74,31 @@ public sealed class JsonContent
         return FromNode(node);
     }
 
+    /// <summary>Serialize <paramref name="value"/> with source-generated metadata — trim- and AOT-safe.</summary>
+    /// <exception cref="TypeSafeException">The value encodes to something that is not text, an object, or an array.</exception>
+    public static JsonContent From<T>(T value, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        JsonNode? node;
+        try
+        {
+            node = JsonSerializer.SerializeToNode(value, typeInfo);
+        }
+        catch (Exception error) when (error is NotSupportedException or JsonException or InvalidOperationException)
+        {
+            throw new TypeSafeException("The request body could not be encoded as JSON", error);
+        }
+
+        return node is null
+            ? throw new TypeSafeException("Content must be text, a JSON object, or a JSON array; got null.")
+            : FromNode(node);
+    }
+
     /// <summary>A detached copy of the underlying node; null for <see cref="Null"/>.</summary>
     public JsonNode? ToNode() => _node?.DeepClone();
 
     /// <inheritdoc />
-    public override string ToString() => _node?.ToJsonString(Json.Relaxed) ?? "null";
+    public override string ToString() => _node is null ? "null" : Json.Write(_node);
 
     private static JsonContent FromNode(JsonNode node)
     {
@@ -95,6 +121,23 @@ internal static class Json
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    private static readonly JsonWriterOptions Writer = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    /// <summary>A node as compact JSON, through a writer rather than a serializer — no type metadata involved,
+    /// so it behaves identically under trimming and Native AOT.</summary>
+    public static byte[] WriteBytes(JsonNode node)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, Writer))
+        {
+            node.WriteTo(writer);
+        }
+
+        return buffer.ToArray();
+    }
+
+    public static string Write(JsonNode node) => System.Text.Encoding.UTF8.GetString(WriteBytes(node));
+
     /// <summary>Lenient response decoding: empty → null, JSON → a node, anything else → the text itself.</summary>
     public static JsonNode? Deserialize(ReadOnlySpan<byte> content)
     {
@@ -107,7 +150,7 @@ internal static class Json
         {
             var node = JsonNode.Parse(content);
             // Force materialization so a duplicate-key object fails HERE, inside the try, not at first access.
-            _ = node?.ToJsonString();
+            if (node is not null) _ = WriteBytes(node);
             return node;
         }
         catch (Exception error) when (error is JsonException or ArgumentException)

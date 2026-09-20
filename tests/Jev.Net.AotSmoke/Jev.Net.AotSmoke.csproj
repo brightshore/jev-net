@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Not a test project: a console app that is PUBLISHED as a native binary and run, in CI, on Linux and
+       Windows. IsAotCompatible on the library only proves the analyzers are quiet; this proves the paths that
+       lean on reflection (answers filled by property name) and on JSON metadata actually work once the
+       trimmer and the AOT compiler have been through them. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Jev.Net\Jev.Net.csproj" />
+  </ItemGroup>
+
+</Project>

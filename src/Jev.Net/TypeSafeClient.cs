@@ -1,4 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using Jev.Net.Internal;
 
 namespace Jev.Net;
@@ -79,13 +82,45 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
         SystemOneAsync<SystemOneResponse>(state, questions, options, cancellationToken);
 
     /// <summary>
-    /// <see cref="SystemOneAsync"/>, decoded into <typeparamref name="TResponse"/>: a class derived from
-    /// <see cref="SystemOneResponse"/> whose answer-typed properties are filled by name, or any other type,
-    /// which is deserialized from the JSON body (snake_case, case-insensitive).
+    /// <see cref="SystemOneAsync(JsonContent, IReadOnlyDictionary{string, Question}, SystemOneOptions?, CancellationToken)"/>,
+    /// decoded into your own <see cref="SystemOneResponse"/> subclass: each answer-typed property is filled
+    /// from the answer of the same name, and is required unless marked <see cref="OptionalAnswerAttribute"/>.
+    /// Trim- and AOT-safe.
     /// </summary>
-    public Task<TResponse> SystemOneAsync<TResponse>(
+    public Task<TResponse> SystemOneAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TResponse>(
         JsonContent state, IReadOnlyDictionary<string, Question> questions, SystemOneOptions? options = null,
-        CancellationToken cancellationToken = default) where TResponse : class
+        CancellationToken cancellationToken = default) where TResponse : SystemOneResponse, new() =>
+        SendSystemOne(state, questions, options, raw => ResponseDecoder.SystemOne<TResponse>(raw, _transport.Log), cancellationToken);
+
+    /// <summary>The response body read into any type of yours, using source-generated JSON metadata. Trim- and
+    /// AOT-safe. The API spells its fields in snake_case: give your context
+    /// <c>PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower</c>.</summary>
+    public Task<TResponse> SystemOneAsync<TResponse>(
+        JsonContent state, IReadOnlyDictionary<string, Question> questions, JsonTypeInfo<TResponse> responseTypeInfo,
+        SystemOneOptions? options = null, CancellationToken cancellationToken = default) where TResponse : class
+    {
+        ArgumentNullException.ThrowIfNull(responseTypeInfo);
+        return SendSystemOne(state, questions, options, raw => ResponseDecoder.Custom(raw, responseTypeInfo), cancellationToken);
+    }
+
+    /// <summary>The response body read into any type of yours by reflection — convenient, but NOT trim- or
+    /// AOT-safe. <see cref="ResponseJson.SnakeCase"/> is the usual choice of options.</summary>
+    [RequiresUnreferencedCode(ReflectionJson)]
+    [RequiresDynamicCode(ReflectionJson)]
+    public Task<TResponse> SystemOneAsync<TResponse>(
+        JsonContent state, IReadOnlyDictionary<string, Question> questions, JsonSerializerOptions responseSerializerOptions,
+        SystemOneOptions? options = null, CancellationToken cancellationToken = default) where TResponse : class
+    {
+        ArgumentNullException.ThrowIfNull(responseSerializerOptions);
+        return SendSystemOne(state, questions, options, raw => ResponseDecoder.Custom<TResponse>(raw, responseSerializerOptions), cancellationToken);
+    }
+
+    internal const string ReflectionJson =
+        "Uses reflection-based System.Text.Json. In a trimmed or Native AOT app, use the overload that takes a JsonTypeInfo<T>.";
+
+    private Task<TResponse> SendSystemOne<TResponse>(
+        JsonContent state, IReadOnlyDictionary<string, Question> questions, SystemOneOptions? options,
+        Func<RawHttpResponse, TResponse> decode, CancellationToken cancellationToken) where TResponse : class
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(state);
@@ -117,7 +152,7 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
         }
 
         var request = _transport.Prepare(HttpMethod.Post, Protocol.SystemOnePath, body, options?.Timeout, options?.ExtraHeaders);
-        return _transport.SendAsync<TResponse>(request, options?.Retry, cancellationToken);
+        return _transport.SendAsync(request, options?.Retry, decode, cancellationToken);
     }
 
     /// <summary>Release network resources, including a supplied HttpClient unless told otherwise.</summary>
@@ -147,7 +182,7 @@ public sealed class ModelsResource
     /// <exception cref="TypeSafeApiException">The server returned an unsuccessful response after any retries.</exception>
     /// <exception cref="TypeSafeApiConnectionException">The request could not connect or timed out after any retries.</exception>
     public Task<ListModelsResponse> ListAsync(RequestOptions? options = null, CancellationToken cancellationToken = default) =>
-        _transport.SendAsync<ListModelsResponse>(
+        _transport.SendAsync(
             _transport.Prepare(HttpMethod.Get, Protocol.ModelsPath, null, options?.Timeout, options?.ExtraHeaders),
-            options?.Retry, cancellationToken);
+            options?.Retry, ResponseDecoder.Models, cancellationToken);
 }

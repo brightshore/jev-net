@@ -17,6 +17,8 @@ internal sealed record PreparedRequest(
 /// <summary>Shared HTTP request preparation, logging, retrying, and dispatch to response types.</summary>
 internal sealed class Transport(HttpClient http, Config config, RetryPolicy retry, SdkLog log, TypeSafeClientOptions options)
 {
+    public SdkLog Log => log;
+
     private static readonly string Identity = $"{Protocol.SdkName}/{Protocol.Version}";
 
     private readonly TimeProvider _clock = options.TimeProvider ?? TimeProvider.System;
@@ -48,7 +50,7 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         {
             try
             {
-                content = Encoding.UTF8.GetBytes(body.ToJsonString(Json.Relaxed));
+                content = Json.WriteBytes(body);
             }
             catch (Exception error) when (error is NotSupportedException or InvalidOperationException)
             {
@@ -75,7 +77,8 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         return new PreparedRequest(method, url, merged.ToList(), content, Timeouts.Checked(timeout ?? config.Timeout));
     }
 
-    public async Task<T> SendAsync<T>(PreparedRequest request, RetryPolicy? overridePolicy, CancellationToken ct) where T : class
+    public async Task<T> SendAsync<T>(
+        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CancellationToken ct) where T : class
     {
         var policy = overridePolicy ?? retry;
         var started = _clock.GetTimestamp();
@@ -88,7 +91,7 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             try
             {
                 var raw = await AttemptAsync(request, attempt, ct).ConfigureAwait(false);
-                return ResponseDecoder.Parse<T>(raw, log);
+                return ResponseDecoder.Parse(raw, decode);
             }
             catch (Exception error) when (error is not OperationCanceledException && policy.Retryable(error))
             {

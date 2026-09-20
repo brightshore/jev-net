@@ -173,7 +173,7 @@ public sealed class ResponseTests
         public NoulAnswer Spam { get; set; } = null!;
         public ChoiceAnswer Tone { get; set; } = null!;
         [JsonPropertyName("quality")] public ScoreAnswer HowGood { get; set; } = null!;
-        public NoulAnswer? NotAsked { get; set; }
+        [OptionalAnswer] public NoulAnswer? NotAsked { get; set; }
     }
 
     private sealed class WrongKind : SystemOneResponse
@@ -186,9 +186,12 @@ public sealed class ResponseTests
         public NoulAnswer BillingIssue { get; set; } = null!;
     }
 
-    private sealed record Envelope(string Model, EnvelopeUsage Usage);
-
-    private sealed record EnvelopeUsage(int InputTokens, int OutputTokens);
+    // Nullable, but NOT marked optional: nullability is metadata the trimmer removes, so it must not be what
+    // decides this — or the same class would validate differently in a Native AOT build.
+    private sealed class NullableButRequired : SystemOneResponse
+    {
+        public NoulAnswer? BillingIssue { get; set; }
+    }
 
     [TestMethod]
     public async Task A_Derived_Response_Gets_Its_Answers_By_Name_And_Type()
@@ -199,7 +202,7 @@ public sealed class ResponseTests
         result.Spam.Should().BeSameAs(result.Nouls["spam"]);
         result.Tone.Should().BeSameAs(result.Choices["tone"]);
         result.HowGood.Should().BeSameAs(result.Scores["quality"]);
-        result.NotAsked.Should().BeNull("a nullable answer property is optional");
+        result.NotAsked.Should().BeNull("[OptionalAnswer] is what makes a missing answer acceptable");
         result.RequestId.Should().Be("req-1");
     }
 
@@ -212,21 +215,39 @@ public sealed class ResponseTests
             .Should().ThrowAsync<TypeSafeApiResponseValidationException>()).Which.FieldPath.Should().Be("spam");
         (await client.Invoking(c => c.SystemOneAsync<MissingAnswer>("x", Clients.OneQuestion))
             .Should().ThrowAsync<TypeSafeApiResponseValidationException>()).Which.FieldPath.Should().Be("billing_issue");
+        (await client.Invoking(c => c.SystemOneAsync<NullableButRequired>("x", Clients.OneQuestion))
+            .Should().ThrowAsync<TypeSafeApiResponseValidationException>()).Which.FieldPath.Should().Be("billing_issue");
     }
 
     [TestMethod]
-    public async Task Any_Other_Type_Is_Deserialized_From_The_Body_With_A_Located_Failure()
+    [DataRow("source-generated")]
+    [DataRow("reflection")]
+    public async Task Any_Other_Type_Is_Deserialized_From_The_Body_With_A_Located_Failure(string how)
     {
-        using var ok = Clients.Create(_ => Http.Json(200, ClientTests.Result));
-        (await ok.SystemOneAsync<Envelope>("x", Clients.OneQuestion)).Should().Be(new Envelope("jev-latest", new EnvelopeUsage(12, 3)));
+        Task<Envelope> Ask(TypeSafeClient client) => how == "reflection"
+            ? client.SystemOneAsync<Envelope>("x", Clients.OneQuestion, ResponseJson.SnakeCase)
+            : client.SystemOneAsync("x", Clients.OneQuestion, TestJsonContext.Default.Envelope);
+
+        using var ok = Clients.Create(_ => Http.Json(200, ClientTests.Result, ("x-typesafe-request-id", "req-9")));
+        (await Ask(ok)).Should().Be(new Envelope("jev-latest", new EnvelopeUsage(12, 3)));
 
         using var bad = Clients.Create(_ => Http.Json(200, """{"model": "m", "usage": {"input_tokens": "many", "output_tokens": 1}}"""));
-        var caught = (await bad.Invoking(c => c.SystemOneAsync<Envelope>("x", Clients.OneQuestion))
-            .Should().ThrowAsync<TypeSafeApiResponseValidationException>()).Which;
+        var caught = (await FluentActions.Awaiting(() => Ask(bad)).Should().ThrowAsync<TypeSafeApiResponseValidationException>()).Which;
         caught.FieldPath.Should().Be("usage.input_tokens");
         caught.Cause.Should().BeOfType<JsonException>();
 
         using var failed = Clients.Create(_ => Http.Json(401, """{"message": "no"}"""));
-        await failed.Invoking(c => c.SystemOneAsync<Envelope>("x", Clients.OneQuestion)).Should().ThrowAsync<TypeSafeAuthenticationException>();
+        await FluentActions.Awaiting(() => Ask(failed)).Should().ThrowAsync<TypeSafeAuthenticationException>();
     }
 }
+
+internal sealed record Envelope(string Model, EnvelopeUsage Usage);
+
+internal sealed record EnvelopeUsage(int InputTokens, int OutputTokens);
+
+internal sealed record Ticket(string Subject, string[] Tags);
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSerializable(typeof(Envelope))]
+[JsonSerializable(typeof(Ticket))]
+internal sealed partial class TestJsonContext : JsonSerializerContext;

@@ -17,7 +17,9 @@ dotnet add package Jev.Net
 
 **One dependency.** `Microsoft.Extensions.Logging.Abstractions`, and nothing else. Retries, backoff,
 `Retry-After` and per-attempt timeouts are about a hundred lines of its own, so it drops into a library, a CLI,
-a desktop app or a worker without changing what your dependency graph looks like. Targets `net8.0` and `net10.0`.
+a desktop app or a worker without changing what your dependency graph looks like. That promise is enforced:
+CI reads the packed `.nuspec` and fails on a second dependency. Targets `net8.0` and `net10.0`, and is
+**trim- and Native AOT-compatible** — a smoke app is published as a native binary and run on every build.
 
 **The Python SDK, in C#.** It is a faithful port of the official
 [`typesafe-sdk`](https://github.com/typesafe-ai/typesafe-sdk-python) (read at 0.7.0): the same request shape,
@@ -58,26 +60,34 @@ Questions are independent and answered in one round trip, so ask everything abou
 ## Typed answers by name
 
 Derive from `SystemOneResponse` and declare answer-typed properties; each is filled from the answer of the same
-name (`[JsonPropertyName]`, else the property name — exact, case-insensitive, then snake_case). A missing answer
-or one of the wrong kind is a `TypeSafeApiResponseValidationException` naming the field; a nullable property is
-optional.
+name (`[JsonPropertyName]`, else the property name — exact, case-insensitive, then snake_case). Every such
+property is **required** — a missing answer, or one of the wrong kind, is a
+`TypeSafeApiResponseValidationException` naming the field — unless you mark it `[OptionalAnswer]`.
 
 ```csharp
 sealed class Ticket : SystemOneResponse
 {
     public NoulAnswer Billing { get; set; } = null!;
     public ChoiceAnswer Tone { get; set; } = null!;
+    [OptionalAnswer] public ScoreAnswer? Urgency { get; set; }
 }
 
 var ticket = await client.SystemOneAsync<Ticket>(state, questions);
 ```
 
-Any other `TResponse` is deserialized from the body (snake_case, case-insensitive).
+To read the body into a type that is entirely yours, pass JSON metadata — source-generated for trimmed and AOT
+apps, or reflection-based when that doesn't matter:
+
+```csharp
+var mine = await client.SystemOneAsync(state, questions, MyJsonContext.Default.MyEnvelope);   // AOT-safe
+var mine = await client.SystemOneAsync<MyEnvelope>(state, questions, ResponseJson.SnakeCase); // reflection
+```
 
 ## State, instructions and criteria: `JsonContent`
 
 Everywhere the API takes "text, an object, or an array", the SDK takes a `JsonContent`. It converts implicitly
-from `string` and from `JsonNode`; `JsonContent.From(value)` serializes anything else. Nodes are deep-cloned in
+from `string` and from `JsonNode`; `JsonContent.From(value)` serializes anything else (pass a `JsonTypeInfo<T>`
+as the second argument in a trimmed or AOT app). Nodes are deep-cloned in
 and out, so one `JsonObject` can appear in several questions and a question can be sent any number of times —
 `System.Text.Json` nodes have a single parent, and encoding by reference would throw on the second use.
 
@@ -135,6 +145,34 @@ not**: they are whatever state you sent. Don't enable Debug where that matters.
 
 Pin a model (`jev-1.13.0`, not `jev-latest`) wherever you have tuned thresholds against its probabilities.
 
+## Python SDK → Jev.Net
+
+If you know `typesafe-sdk`, you already know this. Everything in the left column behaves the same on the right.
+
+| Python | Jev.Net |
+| --- | --- |
+| `AsyncTypeSafeClient(api_key=…, model=…, base_url=…, timeout=…, headers=…, retry=…)` | `new TypeSafeClient(new TypeSafeClientOptions { ApiKey, Model, BaseUrl, Timeout, Headers, Retry })` |
+| `transport=` / `http_client=` | `Handler` / `HttpClient` (mutually exclusive, as upstream) |
+| `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`, `TYPESAFE_LOG_LEVEL` | the same four variables, same precedence, blank = unset |
+| `await client.system_one(state, questions, model=…, retry=…, timeout=…, extra_headers=…, extra_body=…)` | `await client.SystemOneAsync(state, questions, new SystemOneOptions { Model, Retry, Timeout, ExtraHeaders, ExtraBody })` |
+| `await client.models.list()` | `await client.Models.ListAsync()` |
+| `Noul(instructions=…, criteria={"true": …, "false": …})` | `new Noul(instructions, new NoulCriteria { True = …, False = … })` |
+| `Choice(instructions=…, criteria={"calm": None, "angry": "…"})` | `new Choice(["calm", "angry"], instructions)` or a `Dictionary<string, JsonContent?>` with descriptions |
+| `Score(instructions=…, criteria=["low", "high"])` | `new Score(["low", "high"], instructions)` |
+| a raw `{"type": "noul", …}` dict | a `JsonObject` (converts implicitly to `Question`) |
+| `JSONContent` (str, mapping, sequence) | `JsonContent` (string, `JsonObject`, `JsonArray`, or `JsonContent.From(…)`) |
+| `result.nouls["q"].noul`, `.choices["q"].choice` / `.confidence` / `.probabilities`, `.scores["q"].score` / `.legend` | `result.Nouls["q"].Noul`, `.Choices["q"].Choice` / `.Confidence` / `.Probabilities`, `.Scores["q"].Score` / `.Legend` |
+| `result.answers`, `.model`, `.usage.input_tokens` | `result.Answers`, `.Model`, `.Usage.InputTokens` |
+| `result.request_id`, `result.raw_http_response` | `result.RequestId`, `result.RawHttpResponse` |
+| `response_model=MyResponse` (a `SystemOneResponse` subclass with answer fields) | `SystemOneAsync<MyResponse>(…)` |
+| `response_model=AnyPydanticModel` | `SystemOneAsync(…, JsonTypeInfo<T>)` or `SystemOneAsync<T>(…, JsonSerializerOptions)` |
+| `RetryPolicy(max_retries, backoff_initial, backoff_max, backoff_jitter, http_statuses, respect_retry_after, api_connection_error, api_timeout_error, exceptions, predicate, timeout)` | `RetryPolicy { MaxRetries, BackoffInitial, BackoffMax, BackoffJitter, HttpStatuses, RespectRetryAfter, ApiConnectionError, ApiTimeoutError, Exceptions, Predicate, Timeout }` — same defaults |
+| `TypeSafeError` → `TypeSafeAPIError` → `…BadRequestError`, `…RateLimitError`, … | `TypeSafeException` → `TypeSafeApiException` → `…BadRequestException`, `…RateLimitException`, … |
+| `error.status`, `.body`, `.headers`, `.endpoint`, `.request_id`, `.retry_after_ms`, `.field_path` | `error.Status`, `.Body`, `.Headers`, `.Endpoint`, `.RequestId`, `.RetryAfter`, `.FieldPath` |
+| `str(error)` | `error.Message` — the same text |
+| unknown answer types skipped with a warning; unknown fields ignored | the same |
+| `async with client:` | `await using var client = …` |
+
 ## Differences from the Python SDK
 
 * **Async only.** No synchronous client; that is the .NET convention for HTTP.
@@ -147,6 +185,9 @@ Pin a model (`jev-1.13.0`, not `jev-latest`) wherever you have tuned thresholds 
   questions validate at construction with `ArgumentException`s rather than pydantic errors.
 * **No covariant question maps** — `IReadOnlyDictionary` is invariant in its value; declare the dictionary as
   `Dictionary<string, Question>`.
+* **Optional answers are marked, not inferred.** Python reads `Optional[...]`; here a property is required unless
+  it carries `[OptionalAnswer]`. Nullability is metadata the trimmer removes, so inferring from it would make the
+  same class validate differently in a Native AOT build.
 * **`TimeProvider`** is accepted for the retry clock — a .NET addition.
 * It identifies itself as `jev-net/<version>`, not as the official SDK.
 
@@ -163,6 +204,10 @@ manual clock. `LiveIntegrationTests` is the one class that calls the real API, a
 The suite was mutation-checked: the client was broken on purpose in nine places (protected headers, the retry
 budget, header redaction, strict number decoding, node cloning, jitter, `retry-after-ms` precedence,
 cancellation-vs-timeout, unknown answer types) and every break is caught.
+
+`tests/Jev.Net.AotSmoke` is not a test project but a console app: CI publishes it with `PublishAot` and runs the
+native binary on Linux and Windows, exercising request encoding, retries, answers-by-property-name,
+source-generated JSON, and error mapping after the trimmer and AOT compiler have been through them.
 
 ## License
 
