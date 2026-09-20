@@ -6,8 +6,7 @@
        real API (see Program.cs for how to run one). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- Follows the test project, which references it and runs on both frameworks in CI. -->
-    <JevTestAllFrameworks Condition="'$(JevTestAllFrameworks)' == '' and '$(CI)' == 'true'">true</JevTestAllFrameworks>
+    <!-- Follows the test project, which references it: both frameworks only under -p:JevTestAllFrameworks=true. -->
     <TargetFrameworks Condition="'$(JevTestAllFrameworks)' == 'true'">net8.0;net10.0</TargetFrameworks>
     <TargetFramework Condition="'$(JevTestAllFrameworks)' != 'true'">net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
