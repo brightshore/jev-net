@@ -17,7 +17,7 @@ public sealed partial class ReadmeTests
     // tagged csharp / cs / c#. Deliberately LOOSER than CSharpBlock above - this one counts, that one verifies,
     // and the two numbers must agree. An example written in a shape the verifier cannot read therefore fails
     // the test instead of slipping past it.
-    [GeneratedRegex(@"^[ ]{0,3}(?:```+|~~~+)[ \t]*(?:csharp|cs|c\#)\b", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^[ ]{0,3}(?:```+|~~~+)[ \t]*(?:(?:csharp|cs)\b|c\#(?![\w#]))", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex AnyCSharpFence();
 
     [GeneratedRegex(@"^[ \t]*#region snippet:(?<name>\S+)[ \t]*\n(?<body>.*?)\n[ \t]*#endregion", RegexOptions.Singleline | RegexOptions.Multiline)]
@@ -38,6 +38,18 @@ public sealed partial class ReadmeTests
         var indent = lines.Where(l => l.Trim().Length > 0).Min(l => l.Length - l.TrimStart().Length);
         return string.Join('\n', lines.Select(l => l.Length >= indent ? l[indent..] : l.TrimEnd()));
     }
+
+    [TestMethod]
+    [DataRow("```csharp\n", true)]
+    [DataRow("```cs\n", true)]
+    [DataRow("```c#\n", true)]      // `\b` after '#' never matched - this spelling used to slip past the detector
+    [DataRow("```C# title\n", true)]
+    [DataRow("   ~~~~cs\n", true)]
+    [DataRow("```css\n", false)]
+    [DataRow("```bash\n", false)]
+    [DataRow("    ```csharp\n", false)] // four spaces is an indented code block, not a fence
+    public void The_Fence_Detector_Sees_Every_Spelling_Of_A_CSharp_Fence(string line, bool isCSharp) =>
+        AnyCSharpFence().IsMatch(line).Should().Be(isCSharp);
 
     [TestMethod]
     public void Every_CSharp_Block_In_The_Readme_Is_Compiled_Source()

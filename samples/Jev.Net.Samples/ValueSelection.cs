@@ -15,9 +15,11 @@ namespace Jev.Net.Samples;
 public static partial class ValueSelection
 {
     // Grouped (1,204.50) OR plain (1204.50) digits - decided as ONE alternation inside the amount, with a
-    // no-more-digits guard after it. As two whole-pattern alternatives, "$1204.50" matched the grouped one
-    // first and came out as "$120": a candidate that is not in the document at all.
-    [GeneratedRegex(@"\$\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?(?!\d)")]
+    // guard after it that refuses to stop in the MIDDLE of a number. As two whole-pattern alternatives,
+    // "$1204.50" matched the grouped one first and came out as "$120"; with a two-digit-only fraction, "$10.5"
+    // came out as "$10". Either way the model was being offered a number that is not in the document - the one
+    // thing this sample exists to make impossible.
+    [GeneratedRegex(@"\$\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?(?!\d|[,.]\d)")]
     private static partial Regex Money();
 
     /// <summary>The API documents at most 255 choice options; one is spent on "none".</summary>
@@ -40,9 +42,11 @@ public static partial class ValueSelection
 
         // Labels are opaque ids; the descriptions carry the text. A label that IS the value invites the model
         // to reason about the string rather than about the document.
-        var criteria = candidates
-            .Select((value, index) => (Label: $"candidate_{index}", Value: value))
-            .ToDictionary(c => c.Label, c => (JsonContent?)$"The amount {c.Value}, where it appears in the invoice");
+        // label -> the text it stands for. The ONLY way back from an answer to an amount is a lookup in this map,
+        // so nothing the response says can name a candidate that was not offered.
+        var offered = candidates.Select((value, index) => (Label: $"candidate_{index}", Value: value))
+            .ToDictionary(c => c.Label, c => c.Value, StringComparer.Ordinal);
+        var criteria = offered.ToDictionary(c => c.Key, c => (JsonContent?)$"The amount {c.Value}, where it appears in the invoice");
         criteria["none"] = "None of the listed amounts is the total amount due.";
 
         var result = await typesafe.SystemOneAsync(
@@ -53,17 +57,14 @@ public static partial class ValueSelection
             },
             cancellationToken: ct);
 
-        // The answer is a string from a network. Anything that is not one of OUR labels - "none", a label we
-        // never offered, an index out of range - means "no value", never an exception and never a guess.
-        var choice = result.Choices["total"].Choice;
-        if (!choice.StartsWith("candidate_", StringComparison.Ordinal)
-            || !int.TryParse(choice["candidate_".Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var index)
-            || index >= candidates.Count)
+        // The answer comes from a network. A missing answer, "none", "candidate_000", "candidate_99" - anything
+        // that is not EXACTLY a label we offered - means "no value": never an exception, never a guess.
+        if (!result.Choices.TryGetValue("total", out var answer) || !offered.TryGetValue(answer.Choice, out var picked))
         {
             return null;
         }
 
-        return decimal.TryParse(candidates[index].Replace("$", "").Replace(",", "").Trim(),
+        return decimal.TryParse(picked.Replace("$", "").Replace(",", "").Trim(),
             NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var total) ? total : null;
     }
 }

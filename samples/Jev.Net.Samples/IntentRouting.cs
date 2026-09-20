@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Jev.Net.Samples;
 
 /// <summary>
@@ -50,13 +52,14 @@ public static class IntentRouting
         // Below the line the options looked alike to the model, which is exactly when a person should look.
         if (intent.Confidence < MinimumConfidence)
         {
-            return new HumanReview($"unsure between options (confidence {intent.Confidence:0.00})");
+            return new HumanReview(string.Create(CultureInfo.InvariantCulture, $"unsure between options (confidence {intent.Confidence:0.00})"));
         }
 
         return intent.Choice switch
         {
-            "refund" => new Refund(result.Nouls["refund_full"].Noul >= 0.5),
-            "cancel" => new Cancel(result.Nouls["cancel_now"].Noul >= 0.5),
+            // Strictly above one half: exactly 0.5 is "could not tell", and a coin flip is not a yes.
+            "refund" => new Refund(result.Nouls["refund_full"].Noul > 0.5),
+            "cancel" => new Cancel(result.Nouls["cancel_now"].Noul > 0.5),
             "talk" => new Talk(),
             _ => new HumanReview("no handler fits this message"),
         };
