@@ -34,6 +34,8 @@ jobs:
     name: test + pack + push
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      JevTestAllFrameworks: 'true'   # build, test and pack all see it - see the note in ci.yml
     permissions:
       contents: write   # create the GitHub Release
       id-token: write   # required for NuGet trusted publishing (OIDC)
@@ -68,9 +70,16 @@ jobs:
           dotnet build Jev.Net.slnx --configuration Release
           -p:Version=${{ steps.cfg.outputs.version }}
           -p:ContinuousIntegrationBuild=true
+         
 
-      - name: Test
-        run: dotnet test --solution Jev.Net.slnx --configuration Release --no-build
+      - name: Test (net8.0 + net10.0)
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test --solution Jev.Net.slnx --configuration Release --no-build 2>&1 | tee test.log
+          for tfm in net8.0 net10.0; do
+            grep -q "Jev.Net.Tests.dll ($tfm|" test.log || { echo "::error::no test run found for $tfm"; exit 1; }
+          done
 
       - name: Pack
         run: >

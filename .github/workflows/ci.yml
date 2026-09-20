@@ -20,6 +20,11 @@ jobs:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    # MSBuild reads environment variables as properties, so this reaches build, test AND pack alike. It was a
+    # -p: flag on `dotnet build` alone for one commit - and `dotnet test --no-build` then evaluated the test
+    # project WITHOUT it, ran net10.0 only, and reported green. The step after Test now proves both ran.
+    env:
+      JevTestAllFrameworks: 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -34,10 +39,23 @@ jobs:
             8.0.x
             10.0.x
       - name: Build (warnings are errors; both target frameworks)
-        run: dotnet build Jev.Net.slnx --configuration Release
+        run: dotnet build Jev.Net.slnx --configuration Release -p:ContinuousIntegrationBuild=true
       # Offline by construction: the live tests need TYPESAFE_LIVE_TESTS=1 AND a key, and CI sets neither.
-      - name: Test
-        run: dotnet test --solution Jev.Net.slnx --configuration Release --no-build
+      # The build above passed, so this runs the suite on net8.0 AND net10.0.
+      - name: Test (net8.0 + net10.0)
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test --solution Jev.Net.slnx --configuration Release --no-build 2>&1 | tee test.log
+
+      # A green run that quietly tested one framework is the failure this guards against.
+      - name: Both frameworks really ran
+        shell: bash
+        run: |
+          for tfm in net8.0 net10.0; do
+            grep -q "Jev.Net.Tests.dll ($tfm|" test.log || { echo "::error::no test run found for $tfm"; exit 1; }
+            echo "ok: tests ran on $tfm"
+          done
       # IsAotCompatible only proves the analyzers are quiet. This publishes a real native binary and runs it:
       # request encoding, a retry, answers filled by property name (the one place the library reflects),
       # source-generated JSON and error mapping, all AFTER the trimmer and the AOT compiler have had their way.
@@ -47,9 +65,13 @@ jobs:
           dotnet publish tests/Jev.Net.AotSmoke --configuration Release --output aot
           ./aot/Jev.Net.AotSmoke
 
-      - name: Pack (proves the package still assembles)
+      - name: Pack (assembles the package, and diffs its public API against the last release)
         if: matrix.os == 'ubuntu-latest'
         run: dotnet pack src/Jev.Net/Jev.Net.csproj --configuration Release --no-build --output artifacts
+      - name: API baseline is the latest published version
+        if: matrix.os == 'ubuntu-latest'
+        run: scripts/check-baseline.sh
+
       - name: One dependency, as promised
         if: matrix.os == 'ubuntu-latest'
         run: scripts/check-dependencies.sh artifacts/*.nupkg

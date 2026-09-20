@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  # Test and tooling packages only, in practice: the library has ONE dependency, pinned on purpose at the
+  # oldest version that works (see the comment in src/Jev.Net/Jev.Net.csproj). Do not merge a bump to it
+  # without reading that comment - a newer floor is a cost to every consumer.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: Microsoft.Extensions.Logging.Abstractions

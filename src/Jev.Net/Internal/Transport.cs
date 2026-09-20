@@ -91,7 +91,7 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             try
             {
                 var raw = await AttemptAsync(request, attempt, ct).ConfigureAwait(false);
-                return ResponseDecoder.Parse(raw, decode);
+                return ResponseDecoder.Parse(raw, decode, _clock);
             }
             catch (Exception error) when (error is not OperationCanceledException && policy.Retryable(error))
             {
@@ -188,7 +188,10 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             log.LogInformation("{Method} {Url} <- {Error}", request.Method.Method, request.Url, "Timeout");
             throw new TypeSafeApiTimeoutException(request.Timeout, error);
         }
-        catch (Exception error) when (error is HttpRequestException or IOException or TimeoutException)
+        // InvalidDataException: a body that claims gzip/deflate/brotli and is not. It surfaces while the content
+        // is READ (the SDK's own handler decompresses), it is not an IOException, and left alone it escaped as a
+        // bare BCL exception instead of anything the SDK documents.
+        catch (Exception error) when (error is HttpRequestException or IOException or TimeoutException or InvalidDataException)
         {
             log.LogInformation("{Method} {Url} <- {Error}", request.Method.Method, request.Url, error.GetType().Name);
             if (error is TimeoutException || error.InnerException is TimeoutException)

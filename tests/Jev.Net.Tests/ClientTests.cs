@@ -286,6 +286,7 @@ public sealed class ClientTests
     [TestMethod]
     [DataRow("connect", typeof(TypeSafeApiConnectionException))]
     [DataRow("io", typeof(TypeSafeApiConnectionException))]
+    [DataRow("corrupt-compression", typeof(TypeSafeApiConnectionException))]
     [DataRow("timeout", typeof(TypeSafeApiTimeoutException))]
     [DataRow("httpclient-timeout", typeof(TypeSafeApiTimeoutException))]
     public async Task Transport_Errors(string kind, Type expected)
@@ -294,6 +295,7 @@ public sealed class ClientTests
         {
             "connect" => new HttpRequestException("failed"),
             "io" => new IOException("failed"),
+            "corrupt-compression" => new InvalidDataException("The archive entry was compressed using an unsupported compression method."),
             "timeout" => new TimeoutException("failed"),
             _ => new TaskCanceledException("failed", new TimeoutException()),
         };
@@ -309,6 +311,28 @@ public sealed class ClientTests
             timedOut.Timeout.Should().Be(TimeSpan.FromSeconds(1.25));
             timedOut.Message.Should().Be("Request timed out (timeout=1.25s).");
         }
+    }
+
+    private sealed class CorruptContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) =>
+            throw new InvalidDataException("Found invalid data while decoding.");
+
+        protected override bool TryComputeLength(out long length) { length = 0; return false; }
+    }
+
+    [TestMethod]
+    public async Task A_Body_That_Fails_While_Being_Read_Is_An_Sdk_Error_And_Is_Retried()
+    {
+        // What a mislabeled gzip body looks like from above the decompressing handler: headers arrive fine, then
+        // reading the content throws InvalidDataException. That happens AFTER SendAsync returned, inside our read.
+        var handler = new StubHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new CorruptContent() });
+        using var client = Clients.Create(handler, retry: new RetryPolicy { BackoffInitial = TimeSpan.Zero });
+
+        var caught = (await client.Invoking(c => c.Models.ListAsync()).Should().ThrowAsync<TypeSafeApiConnectionException>()).Which;
+
+        caught.InnerException.Should().BeOfType<InvalidDataException>();
+        handler.Requests.Should().HaveCount(3, "a garbled body is a transport failure, and those are retried");
     }
 
     [TestMethod]

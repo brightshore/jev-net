@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- Shared by every project in the repo, so the three csprojs state only what is particular to them. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

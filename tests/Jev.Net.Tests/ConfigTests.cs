@@ -131,6 +131,18 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
+    public void The_Default_Handler_Asks_For_Compression_Recycles_Connections_And_Follows_No_Redirects()
+    {
+        // Asserted on the factory, not on the wire: Accept-Encoding is added by the decompression stage INSIDE
+        // SocketsHttpHandler, below the point where any stub handler could sit and observe it.
+        using var handler = TypeSafeClient.CreateDefaultHandler();
+
+        handler.AutomaticDecompression.Should().Be(System.Net.DecompressionMethods.All);
+        handler.PooledConnectionLifetime.Should().Be(TimeSpan.FromMinutes(2));
+        handler.AllowAutoRedirect.Should().BeFalse();
+    }
+
+    [TestMethod]
     public void The_Key_Never_Appears_In_The_Configs_Text()
     {
         var config = Jev.Net.Config.Resolve(new TypeSafeClientOptions { ApiKey = "sk-very-secret", EnvironmentReader = Clients.NoEnvironment }, null);

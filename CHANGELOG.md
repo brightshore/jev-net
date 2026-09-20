@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- **Fixed:** `TypeSafeRateLimitException.RetryAfter` now reads the client's `TimeProvider`. With an HTTP-date
+  `Retry-After` and a non-system clock it disagreed with the delay the SDK actually waited.
+- The default HTTP handler now asks for compressed responses (as the Python SDK's does) and recycles pooled
+  connections every two minutes, so a long-lived client follows DNS changes. Unaffected if you supply your own
+  `Handler` or `HttpClient`.
+- `net8.0` is now tested, not just built; packing fails on a breaking change to the public API.
+
 ## 0.2.0
 
 - **Trim- and Native AOT-compatible.** The library builds with the trim and AOT analyzers as errors, and a smoke

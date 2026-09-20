@@ -1,0 +1,7 @@
+# CI runs on Windows too. Text is LF in the repo and in every checkout, so a test comparing text - and the
+# README packed into the .nupkg - is byte-identical whichever runner built it.
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.nupkg binary
+*.snupkg binary

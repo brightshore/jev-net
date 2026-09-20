@@ -113,9 +113,15 @@ public sealed class TypeSafeRateLimitException : TypeSafeApiException
 {
     public TypeSafeRateLimitException(
         int status, JsonNode? body, IReadOnlyDictionary<string, string>? headers, string? message = null, string? endpoint = null)
+        : this(status, body, headers, message, endpoint, TimeProvider.System) { }
+
+    // An HTTP-date Retry-After is relative to "now", and "now" has to be the same clock the retry loop waits
+    // on - otherwise this property and the delay the SDK actually took disagree under a virtual clock.
+    internal TypeSafeRateLimitException(
+        int status, JsonNode? body, IReadOnlyDictionary<string, string>? headers, string? message, string? endpoint, TimeProvider clock)
         : base(status, body, headers, message, endpoint)
     {
-        RetryAfter = Jev.Net.RetryAfter.Parse(Headers, TimeProvider.System);
+        RetryAfter = Jev.Net.RetryAfter.Parse(Headers, clock);
     }
 
     /// <summary>The server's requested wait, or null if it gave none that could be read.</summary>
@@ -168,14 +174,14 @@ public sealed class TypeSafeApiResponseValidationException : TypeSafeApiExceptio
 internal static class ErrorMessages
 {
     public static TypeSafeApiException ApiError(
-        int status, JsonNode? body, IReadOnlyDictionary<string, string> headers, string? endpoint) => status switch
+        int status, JsonNode? body, IReadOnlyDictionary<string, string> headers, string? endpoint, TimeProvider clock) => status switch
     {
         400 => new TypeSafeBadRequestException(status, body, headers, null, endpoint),
         401 => new TypeSafeAuthenticationException(status, body, headers, null, endpoint),
         403 => new TypeSafePermissionDeniedException(status, body, headers, null, endpoint),
         404 => new TypeSafeNotFoundException(status, body, headers, null, endpoint),
         422 => new TypeSafeUnprocessableEntityException(status, body, headers, null, endpoint),
-        429 => new TypeSafeRateLimitException(status, body, headers, null, endpoint),
+        429 => new TypeSafeRateLimitException(status, body, headers, null, endpoint, clock),
         >= 500 => new TypeSafeInternalServerException(status, body, headers, null, endpoint),
         _ => new TypeSafeApiException(status, body, headers, null, endpoint),
     };
