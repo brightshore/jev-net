@@ -32,7 +32,7 @@ jobs:
         # No macOS leg: it bills at 10x and nothing here is platform-specific enough to pay for it.
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
