@@ -13,6 +13,13 @@ public sealed partial class ReadmeTests
     [GeneratedRegex(@"(?:<!-- snippet: (?<names>[^>]+?) -->\n)?```csharp\n(?<code>.*?)\n```", RegexOptions.Singleline)]
     private static partial Regex CSharpBlock();
 
+    // Any fence a Markdown renderer would show as C#: indented up to three spaces, tilde or backtick, and
+    // tagged csharp / cs / c#. Deliberately LOOSER than CSharpBlock above - this one counts, that one verifies,
+    // and the two numbers must agree. An example written in a shape the verifier cannot read therefore fails
+    // the test instead of slipping past it.
+    [GeneratedRegex(@"^[ ]{0,3}(?:```+|~~~+)[ \t]*(?:csharp|cs|c\#)\b", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
+    private static partial Regex AnyCSharpFence();
+
     [GeneratedRegex(@"^[ \t]*#region snippet:(?<name>\S+)[ \t]*\n(?<body>.*?)\n[ \t]*#endregion", RegexOptions.Singleline | RegexOptions.Multiline)]
     private static partial Regex Region();
 
@@ -37,9 +44,12 @@ public sealed partial class ReadmeTests
     {
         var regions = Region().Matches(Read("samples", "Jev.Net.Samples", "ReadmeSnippets.cs"))
             .ToDictionary(m => m.Groups["name"].Value, m => Dedent(m.Groups["body"].Value));
-        var blocks = CSharpBlock().Matches(Read("README.md"));
+        var readme = Read("README.md");
+        var blocks = CSharpBlock().Matches(readme);
 
         blocks.Count.Should().BeGreaterThanOrEqualTo(4, "if this finds nothing, the check is checking nothing");
+        AnyCSharpFence().Matches(readme).Count.Should().Be(blocks.Count,
+            "every C# fence must be one the verifier can read: column zero, three backticks, tagged exactly `csharp`");
         foreach (Match block in blocks)
         {
             var code = block.Groups["code"].Value;
