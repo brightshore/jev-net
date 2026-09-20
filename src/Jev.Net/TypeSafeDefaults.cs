@@ -23,6 +23,9 @@ public static class TypeSafeDefaults
     /// <summary>Default model name.</summary>
     public const string Model = "jev-latest";
 
+    /// <summary>This package's version, e.g. <c>0.3.0</c> — what it sends in <c>User-Agent</c>. For bug reports and telemetry.</summary>
+    public static string SdkVersion => Protocol.Version;
+
     /// <summary>Default timeout for each HTTP operation.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 }

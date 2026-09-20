@@ -16,7 +16,7 @@
   <PropertyGroup>
     <PackageId>Jev.Net</PackageId>
     <!-- Overridden by the release workflow from the tag (Jev.Net@x.y.z); this is the local/dev value. -->
-    <Version>0.2.1</Version>
+    <Version>0.3.0</Version>
     <Description>A lightweight, unofficial .NET client for the TypeSafe AI API (System One / Jev): typed Noul, Choice and Score questions, typed answers with calibrated probabilities, retries with Retry-After. One dependency. A faithful port of the official Python SDK - same request shape, error model and messages, validated by a mirror of its test suite.</Description>
     <Authors>Brightshore</Authors>
     <Copyright>Copyright (c) 2026 Brightshore</Copyright>

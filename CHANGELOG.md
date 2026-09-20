@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+All additive.
+
+- `SystemOneResponse.FromHttpResponse` / `ListModelsResponse.FromHttpResponse`, a public `RawHttpResponse`
+  constructor and `RawHttpResponse.FromAsync(HttpResponseMessage)`: build a genuine, validated response from a
+  cache, a recording, or a test. The Python SDK's `from_http_response`.
+- `ITypeSafeClient` and `IModelsResource`, so code that uses the client can be given a fake.
+- `SystemOneResponse.UnmodeledAnswers`: answers whose type this SDK does not model, kept as sent. `Answers` is
+  unchanged (it still omits them, as the Python SDK does).
+- `ScoreAnswer.MostLikely`: the most probable level, beside the averaged `Score`.
+- `TypeSafeDefaults.SdkVersion`.
+
 ## 0.2.1
 
 - **Fixed:** `TypeSafeRateLimitException.RetryAfter` now reads the client's `TimeProvider`. With an HTTP-date

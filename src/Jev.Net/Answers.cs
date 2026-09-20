@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace Jev.Net;
 
@@ -40,6 +41,29 @@ public sealed record ScoreAnswer(
 {
     /// <inheritdoc />
     public override string Type => "score";
+
+    /// <summary>
+    /// The single most probable level (the lowest, on a tie), or null when the API reported no probabilities.
+    /// <see cref="Score"/> is the probability-weighted AVERAGE and can land between levels, or on a level
+    /// nobody thinks is likely when opinion is split between the extremes — this is the mode, for when you need
+    /// one rubric level to show or branch on. Read <see cref="Confidence"/> before trusting either.
+    /// </summary>
+    /// <remarks>
+    /// Only levels that exist in <see cref="Legend"/> are candidates, so the result can always be looked up
+    /// there. The decoder does not REJECT a probability whose level the legend lacks — the Python SDK doesn't,
+    /// and the raw map stays available in <see cref="Probabilities"/> — but a level the rubric never defined is
+    /// not something to hand back as "the answer". (With an empty legend, every probability is a candidate.)
+    /// </remarks>
+    [JsonIgnore]
+    public int? MostLikely
+    {
+        get
+        {
+            var candidates = Legend.Count == 0 ? Probabilities : Probabilities.Where(level => Legend.ContainsKey(level.Key));
+            return candidates.OrderByDescending(level => level.Value).ThenBy(level => level.Key)
+                .Select(level => (int?)level.Key).FirstOrDefault();
+        }
+    }
 }
 
 /// <summary>Token counts for a request, when reported by the API.</summary>
