@@ -78,7 +78,7 @@ public class TypeSafeApiException : TypeSafeException
             return "status code (no body)";
         }
 
-        var raw = body.GetValueKind() == JsonValueKind.String ? body.GetValue<string>() : body.ToJsonString(Json.Relaxed);
+        var raw = body.GetValueKind() == JsonValueKind.String ? body.GetValue<string>() : Json.Write(body);
         return raw.Length > Protocol.MaxErrorBodyLength ? raw[..Protocol.MaxErrorBodyLength] + "…" : raw;
     }
 }
@@ -227,7 +227,7 @@ internal static class ErrorMessages
     {
         null => "None",
         _ when node.GetValueKind() == JsonValueKind.String => node.GetValue<string>(),
-        _ => node.ToJsonString(),
+        _ => Json.Write(node),
     };
 }
 

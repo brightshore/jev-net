@@ -278,7 +278,7 @@ public sealed class RawQuestion : Question
         {
             JsonValueKind.String => node.GetValue<string>().Length == 0,
             JsonValueKind.False => true,
-            JsonValueKind.Number => node.ToJsonString() is "0" or "0.0" or "-0",
+            JsonValueKind.Number => Json.Write(node) is "0" or "0.0" or "-0",
             _ => false,
         },
     };

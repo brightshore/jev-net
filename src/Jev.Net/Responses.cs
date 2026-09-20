@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 
 namespace Jev.Net;
@@ -66,8 +68,9 @@ public abstract class TypeSafeResponse
 ///
 /// <para>Derive from this and declare <see cref="NoulAnswer"/> / <see cref="ChoiceAnswer"/> /
 /// <see cref="ScoreAnswer"/> properties to get named, typed answers back from
-/// <see cref="TypeSafeClient.SystemOneAsync{TResponse}"/>: each property is filled from the answer of the same
-/// name (its <see cref="JsonPropertyNameAttribute"/>, else its name — exact, case-insensitive, then snake_case).</para>
+/// <c>SystemOneAsync&lt;TResponse&gt;</c>: each property is filled from the answer of the same name (its
+/// <see cref="JsonPropertyNameAttribute"/>, else its name — exact, case-insensitive, then snake_case). Every such
+/// property is REQUIRED unless it carries <see cref="OptionalAnswerAttribute"/>.</para>
 /// </summary>
 public class SystemOneResponse : TypeSafeResponse
 {
@@ -101,6 +104,25 @@ public class SystemOneResponse : TypeSafeResponse
         Answers.Where(pair => pair.Value is T).ToDictionary(pair => pair.Key, pair => (T)pair.Value);
 }
 
+/// <summary>
+/// Marks an answer property on a <see cref="SystemOneResponse"/> subclass as optional: left null when the
+/// response has no answer of that name, instead of failing validation.
+/// </summary>
+/// <remarks>An attribute rather than "is the property nullable?", because nullability metadata is exactly what
+/// the trimmer removes — the same class would validate differently in a Native AOT build.</remarks>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class OptionalAnswerAttribute : Attribute;
+
+/// <summary>Ready-made serializer settings for reading a response body into your own type.</summary>
+public static class ResponseJson
+{
+    /// <summary>Case-insensitive, <c>snake_case</c> property names — how the API spells its fields.</summary>
+    public static JsonSerializerOptions SnakeCase { get; } = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+    };
+}
+
 /// <summary>The models available to the account.</summary>
 public sealed class ListModelsResponse : TypeSafeResponse
 {
@@ -115,38 +137,22 @@ public sealed class ListModelsResponse : TypeSafeResponse
 /// </summary>
 internal static class ResponseDecoder
 {
-    private static readonly JsonSerializerOptions CustomModel = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-    };
-
-    public static T Parse<T>(RawHttpResponse raw, ILogger logger) where T : class
+    /// <summary>The envelope every endpoint shares: a non-2xx is the matching API exception; otherwise decode,
+    /// then hang the raw HTTP response on anything that can carry it.</summary>
+    public static T Parse<T>(RawHttpResponse raw, Func<RawHttpResponse, T> decode) where T : class
     {
         if (!raw.IsSuccess)
         {
             throw ErrorMessages.ApiError(raw.StatusCode, Json.Deserialize(raw.Content.Span), raw.Headers, raw.Endpoint);
         }
 
-        object result;
-        if (typeof(T) == typeof(ListModelsResponse))
-        {
-            result = Models(raw);
-        }
-        else if (typeof(SystemOneResponse).IsAssignableFrom(typeof(T)))
-        {
-            result = SystemOne(raw, typeof(T), logger);
-        }
-        else
-        {
-            result = Custom<T>(raw);
-        }
-
+        var result = decode(raw);
         if (result is TypeSafeResponse attached)
         {
             attached.Attach(raw);
         }
 
-        return (T)result;
+        return result;
     }
 
     private static JsonDocument Document(RawHttpResponse raw)
@@ -161,7 +167,7 @@ internal static class ResponseDecoder
         }
     }
 
-    private static ListModelsResponse Models(RawHttpResponse raw)
+    public static ListModelsResponse Models(RawHttpResponse raw)
     {
         using var document = Document(raw);
         var root = document.RootElement;
@@ -182,7 +188,8 @@ internal static class ResponseDecoder
         return new ListModelsResponse { Models = list };
     }
 
-    private static SystemOneResponse SystemOne(RawHttpResponse raw, Type type, ILogger logger)
+    public static T SystemOne<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T>(
+        RawHttpResponse raw, ILogger logger) where T : SystemOneResponse, new()
     {
         using var document = Document(raw);
         var root = document.RootElement;
@@ -235,16 +242,7 @@ internal static class ResponseDecoder
             }
         }
 
-        SystemOneResponse response;
-        try
-        {
-            response = (SystemOneResponse)Activator.CreateInstance(type, nonPublic: true)!;
-        }
-        catch (MissingMethodException error)
-        {
-            throw new TypeSafeException($"{type.Name} needs a parameterless constructor to be used as a response type.", error);
-        }
-
+        var response = new T();
         response.Model = model;
         response.Usage = usage;
         response.Answers = answers;
@@ -253,12 +251,12 @@ internal static class ResponseDecoder
     }
 
     /// <summary>Fill a derived response's typed answer properties from the answers of the same name.</summary>
-    private static void Lift(RawHttpResponse raw, SystemOneResponse response, Dictionary<string, Answer> answers)
+    private static void Lift<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T>(
+        RawHttpResponse raw, T response, Dictionary<string, Answer> answers) where T : SystemOneResponse
     {
-        var type = response.GetType();
-        if (type == typeof(SystemOneResponse)) return;
+        if (typeof(T) == typeof(SystemOneResponse)) return;
 
-        foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        foreach (var property in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
             if (!typeof(Answer).IsAssignableFrom(property.PropertyType) || property.SetMethod is null) continue;
 
@@ -269,8 +267,7 @@ internal static class ResponseDecoder
 
             if (key is null || !property.PropertyType.IsInstanceOfType(answers[key]))
             {
-                var nullable = new NullabilityInfoContext().Create(property).WriteState == NullabilityState.Nullable;
-                if (key is null && nullable) continue;
+                if (key is null && property.IsDefined(typeof(OptionalAnswerAttribute), inherit: true)) continue;
                 throw raw.Invalid(key ?? JsonNamingPolicy.SnakeCaseLower.ConvertName(name));
             }
 
@@ -278,11 +275,25 @@ internal static class ResponseDecoder
         }
     }
 
-    private static T Custom<T>(RawHttpResponse raw) where T : class
+    public static T Custom<T>(RawHttpResponse raw, JsonTypeInfo<T> typeInfo) where T : class
     {
         try
         {
-            return JsonSerializer.Deserialize<T>(raw.Content.Span, CustomModel) ?? throw raw.Invalid("");
+            return JsonSerializer.Deserialize(raw.Content.Span, typeInfo) ?? throw raw.Invalid("");
+        }
+        catch (JsonException error)
+        {
+            throw raw.Invalid(FieldPath(error.Path), error);
+        }
+    }
+
+    [RequiresUnreferencedCode(TypeSafeClient.ReflectionJson)]
+    [RequiresDynamicCode(TypeSafeClient.ReflectionJson)]
+    public static T Custom<T>(RawHttpResponse raw, JsonSerializerOptions options) where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(raw.Content.Span, options) ?? throw raw.Invalid("");
         }
         catch (JsonException error)
         {

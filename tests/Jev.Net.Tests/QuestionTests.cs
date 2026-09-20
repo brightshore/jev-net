@@ -192,6 +192,14 @@ public sealed class QuestionTests
     }
 
     [TestMethod]
+    public void Source_Generated_Metadata_Encodes_Content_Without_Reflection()
+    {
+        var content = JsonContent.From(new Ticket("Charged twice", ["billing", "urgent"]), TestJsonContext.Default.Ticket);
+        JsonAssert.Equal(content.ToNode(), """{"subject": "Charged twice", "tags": ["billing", "urgent"]}""");
+        content.ToString().Should().Be("""{"subject":"Charged twice","tags":["billing","urgent"]}""");
+    }
+
+    [TestMethod]
     public async Task One_Question_Object_Can_Be_Sent_Any_Number_Of_Times()
     {
         // The .NET-specific hazard: a JsonNode has ONE parent, so encoding by reference would work once and

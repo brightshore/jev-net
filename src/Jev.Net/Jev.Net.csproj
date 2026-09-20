@@ -8,6 +8,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Turns on the trim, single-file and AOT analyzers; with warnings as errors, an AOT-unsafe call cannot
+         compile. tests/Jev.Net.AotSmoke is the proof at the other end: it is PUBLISHED native and run in CI. -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,7 +20,7 @@
   <PropertyGroup>
     <PackageId>Jev.Net</PackageId>
     <!-- Overridden by the release workflow from the tag (Jev.Net@x.y.z); this is the local/dev value. -->
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Description>A lightweight, unofficial .NET client for the TypeSafe AI API (System One / Jev): typed Noul, Choice and Score questions, typed answers with calibrated probabilities, retries with Retry-After. One dependency. A faithful port of the official Python SDK - same request shape, error model and messages, validated by a mirror of its test suite.</Description>
     <Authors>Brightshore</Authors>
     <Copyright>Copyright (c) 2026 Brightshore</Copyright>
@@ -27,6 +30,8 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>typesafe;typesafe-ai;jev;system-one;ai;llm;classification;sdk</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReleaseNotes>https://github.com/brightshore/jev-net/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols>true</IncludeSymbols>
@@ -41,6 +46,10 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <!-- THE dependency. "One dependency" is this package's first promise, and it is enforced: see
+       scripts/check-dependencies.sh (run by CI and by the release) and DependencyTests. Adding a second
+       PackageReference here fails both - which is the point. Pinned at the OLDEST version that works, so a
+       consumer is never forced onto a newer Microsoft.Extensions line than the rest of their app. -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
   </ItemGroup>
@@ -49,6 +58,7 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\..\NOTICE" Pack="true" PackagePath="\" />
+    <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

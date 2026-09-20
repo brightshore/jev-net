@@ -19,7 +19,7 @@ jobs:
   test:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -38,9 +38,22 @@ jobs:
       # Offline by construction: the live tests need TYPESAFE_LIVE_TESTS=1 AND a key, and CI sets neither.
       - name: Test
         run: dotnet test --solution Jev.Net.slnx --configuration Release --no-build
+      # IsAotCompatible only proves the analyzers are quiet. This publishes a real native binary and runs it:
+      # request encoding, a retry, answers filled by property name (the one place the library reflects),
+      # source-generated JSON and error mapping, all AFTER the trimmer and the AOT compiler have had their way.
+      - name: Native AOT smoke (publish + run)
+        shell: bash
+        run: |
+          dotnet publish tests/Jev.Net.AotSmoke --configuration Release --output aot
+          ./aot/Jev.Net.AotSmoke
+
       - name: Pack (proves the package still assembles)
         if: matrix.os == 'ubuntu-latest'
         run: dotnet pack src/Jev.Net/Jev.Net.csproj --configuration Release --no-build --output artifacts
+      - name: One dependency, as promised
+        if: matrix.os == 'ubuntu-latest'
+        run: scripts/check-dependencies.sh artifacts/*.nupkg
+
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest'
         with:

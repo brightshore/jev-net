@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Jev.Net.Tests/Jev.Net.Tests.csproj" />
+    <Project Path="tests/Jev.Net.AotSmoke/Jev.Net.AotSmoke.csproj" />
   </Folder>
 </Solution>
