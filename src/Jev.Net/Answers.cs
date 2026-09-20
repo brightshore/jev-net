@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace Jev.Net;
 
@@ -40,6 +41,17 @@ public sealed record ScoreAnswer(
 {
     /// <inheritdoc />
     public override string Type => "score";
+
+    /// <summary>
+    /// The single most probable level (the lowest, on a tie), or null when the API reported no probabilities.
+    /// <see cref="Score"/> is the probability-weighted AVERAGE and can land between levels, or on a level
+    /// nobody thinks is likely when opinion is split between the extremes — this is the mode, for when you need
+    /// one rubric level to show or branch on. Read <see cref="Confidence"/> before trusting either.
+    /// </summary>
+    [JsonIgnore]
+    public int? MostLikely => Probabilities.Count == 0
+        ? null
+        : Probabilities.OrderByDescending(level => level.Value).ThenBy(level => level.Key).First().Key;
 }
 
 /// <summary>Token counts for a request, when reported by the API.</summary>

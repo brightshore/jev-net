@@ -100,6 +100,19 @@ A `JsonObject` converts implicitly to a `Question` and is sent exactly as given 
 question types the API adds before this SDK models them. Only its structure is checked (`type` present; `choice`
 and `score` have `criteria`; a score rubric is nonempty); its schema is left to the API.
 
+## Testing code that uses the client
+
+`TypeSafeClient` implements `ITypeSafeClient`, so your code can take the interface and your tests can hand it a
+fake — and the fake can return *genuine* responses, decoded and validated exactly as the client would:
+
+```csharp
+var raw = new RawHttpResponse(200, headers: null, Encoding.UTF8.GetBytes(recordedJson));
+var response = SystemOneResponse.FromHttpResponse(raw);      // or FromHttpResponse<Ticket>(raw)
+```
+
+The same call turns a cached or replayed body back into a response; a non-2xx snapshot throws the matching
+exception. To fake at the HTTP level instead, give the real client a `Handler`.
+
 ## Errors
 
 | Exception | When |
@@ -164,13 +177,14 @@ If you know `typesafe-sdk`, you already know this. Everything in the left column
 | `result.nouls["q"].noul`, `.choices["q"].choice` / `.confidence` / `.probabilities`, `.scores["q"].score` / `.legend` | `result.Nouls["q"].Noul`, `.Choices["q"].Choice` / `.Confidence` / `.Probabilities`, `.Scores["q"].Score` / `.Legend` |
 | `result.answers`, `.model`, `.usage.input_tokens` | `result.Answers`, `.Model`, `.Usage.InputTokens` |
 | `result.request_id`, `result.raw_http_response` | `result.RequestId`, `result.RawHttpResponse` |
+| `SystemOneResponse.from_http_response(response)` | `SystemOneResponse.FromHttpResponse(raw)`, with `RawHttpResponse.FromAsync(httpResponseMessage)` or its public constructor |
 | `response_model=MyResponse` (a `SystemOneResponse` subclass with answer fields) | `SystemOneAsync<MyResponse>(…)` |
 | `response_model=AnyPydanticModel` | `SystemOneAsync(state, questions, options, JsonTypeInfo<T>)` or `SystemOneAsync<T>(state, questions, options, JsonSerializerOptions)` |
 | `RetryPolicy(max_retries, backoff_initial, backoff_max, backoff_jitter, http_statuses, respect_retry_after, api_connection_error, api_timeout_error, exceptions, predicate, timeout)` | `RetryPolicy { MaxRetries, BackoffInitial, BackoffMax, BackoffJitter, HttpStatuses, RespectRetryAfter, ApiConnectionError, ApiTimeoutError, Exceptions, Predicate, Timeout }` — same defaults |
 | `TypeSafeError` → `TypeSafeAPIError` → `…BadRequestError`, `…RateLimitError`, … | `TypeSafeException` → `TypeSafeApiException` → `…BadRequestException`, `…RateLimitException`, … |
 | `error.status`, `.body`, `.headers`, `.endpoint`, `.request_id`, `.retry_after_ms`, `.field_path` | `error.Status`, `.Body`, `.Headers`, `.Endpoint`, `.RequestId`, `.RetryAfter`, `.FieldPath` |
 | `str(error)` | `error.Message` — the same text |
-| unknown answer types skipped with a warning; unknown fields ignored | the same |
+| unknown answer types skipped with a warning; unknown fields ignored | the same — and the skipped ones are kept in `result.UnmodeledAnswers` |
 | `async with client:` | `await using var client = …` |
 
 ## Differences from the Python SDK
@@ -188,7 +202,9 @@ If you know `typesafe-sdk`, you already know this. Everything in the left column
 * **Optional answers are marked, not inferred.** Python reads `Optional[...]`; here a property is required unless
   it carries `[OptionalAnswer]`. Nullability is metadata the trimmer removes, so inferring from it would make the
   same class validate differently in a Native AOT build.
-* **`TimeProvider`** is accepted for the retry clock — a .NET addition.
+* **`TimeProvider`** is accepted for the retry clock — a .NET addition. So are `ITypeSafeClient`,
+  `result.UnmodeledAnswers` (the receiving half of raw questions), `ScoreAnswer.MostLikely` (the mode, beside the
+  averaged `Score`) and `TypeSafeDefaults.SdkVersion`.
 * It identifies itself as `jev-net/<version>`, not as the official SDK.
 
 ## Tests

@@ -23,7 +23,7 @@ namespace Jev.Net;
 /// string tone = result.Choices["tone"].Choice;
 /// </code>
 /// </example>
-public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
+public sealed class TypeSafeClient : ITypeSafeClient, IDisposable, IAsyncDisposable
 {
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;
@@ -81,6 +81,8 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
 
     /// <summary>The Models API resource.</summary>
     public ModelsResource Models { get; }
+
+    IModelsResource ITypeSafeClient.Models => Models;
 
     /// <summary>Answer named questions about text or structured state.</summary>
     /// <param name="state">Text, a JSON object, or an array to evaluate.</param>
@@ -189,7 +191,7 @@ public sealed class TypeSafeClient : IDisposable, IAsyncDisposable
 }
 
 /// <summary>Access to the models available to the account, reached through <see cref="TypeSafeClient.Models"/>.</summary>
-public sealed class ModelsResource
+public sealed class ModelsResource : IModelsResource
 {
     private readonly Transport _transport;
 

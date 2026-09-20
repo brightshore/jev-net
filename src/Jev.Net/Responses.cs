@@ -6,18 +6,43 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jev.Net;
 
 /// <summary>A snapshot of the HTTP response an SDK object was decoded from.</summary>
 public sealed class RawHttpResponse
 {
-    internal RawHttpResponse(int statusCode, IReadOnlyDictionary<string, string> headers, byte[] content, string? endpoint)
+    /// <summary>
+    /// Build a response snapshot by hand — for a cache, a replay layer, or a test that wants a real
+    /// <see cref="SystemOneResponse"/> without a network. Header lookup is case-insensitive.
+    /// </summary>
+    /// <param name="statusCode">HTTP status code.</param>
+    /// <param name="headers">Response headers; null for none.</param>
+    /// <param name="content">The response body, as received.</param>
+    /// <param name="endpoint">The request method and URL for error messages, e.g. <c>POST https://…/v1/systemone</c>.</param>
+    public RawHttpResponse(
+        int statusCode, IReadOnlyDictionary<string, string>? headers, ReadOnlyMemory<byte> content, string? endpoint = null)
     {
         StatusCode = statusCode;
-        Headers = headers;
+        Headers = headers is null
+            ? HttpHeaderMap.Empty
+            : new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
         Content = content;
         Endpoint = endpoint;
+    }
+
+    /// <summary>Snapshot an <see cref="HttpResponseMessage"/>: status, headers and the fully-read body. The
+    /// message is not disposed; the endpoint is taken from its request, without credentials, query or fragment.</summary>
+    public static async Task<RawHttpResponse> FromAsync(HttpResponseMessage response, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        var body = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var request = response.RequestMessage;
+        var endpoint = request?.RequestUri is { IsAbsoluteUri: true } uri
+            ? $"{request.Method.Method} {uri.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped)}"
+            : null;
+        return new RawHttpResponse((int)response.StatusCode, HttpHeaderMap.From(response), body, endpoint);
     }
 
     /// <summary>HTTP status code.</summary>
@@ -88,6 +113,29 @@ public class SystemOneResponse : TypeSafeResponse
     /// (they remain readable through <see cref="TypeSafeResponse.RawHttpResponse"/>).</summary>
     public IReadOnlyDictionary<string, Answer> Answers { get; internal set; } = new Dictionary<string, Answer>();
 
+    /// <summary>
+    /// Answers whose <c>type</c> this SDK version does not model, keyed by question name, exactly as the API
+    /// sent them — the receiving half of <see cref="RawQuestion"/>. They are deliberately NOT in
+    /// <see cref="Answers"/>, which matches the Python SDK's <c>answers</c> (it omits them too).
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, JsonObject> UnmodeledAnswers { get; internal set; } = new Dictionary<string, JsonObject>();
+
+    /// <summary>
+    /// Decode a response you already hold — from a cache, a recording, or your own HTTP call — with the same
+    /// validation the client applies. A non-2xx status throws the matching <see cref="TypeSafeApiException"/>;
+    /// a body that does not fit throws <see cref="TypeSafeApiResponseValidationException"/>.
+    /// </summary>
+    public static SystemOneResponse FromHttpResponse(RawHttpResponse response) => FromHttpResponse<SystemOneResponse>(response);
+
+    /// <summary><see cref="FromHttpResponse(RawHttpResponse)"/> into your own <see cref="SystemOneResponse"/> subclass.</summary>
+    public static TResponse FromHttpResponse<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TResponse>(
+        RawHttpResponse response) where TResponse : SystemOneResponse, new()
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        return ResponseDecoder.Parse(response, raw => ResponseDecoder.SystemOne<TResponse>(raw, NullLogger.Instance), TimeProvider.System);
+    }
+
     /// <summary>Yes/no answers keyed by question name.</summary>
     [JsonIgnore]
     public IReadOnlyDictionary<string, NoulAnswer> Nouls => _nouls ??= Group<NoulAnswer>();
@@ -128,6 +176,13 @@ public sealed class ListModelsResponse : TypeSafeResponse
 {
     /// <summary>The available models.</summary>
     public IReadOnlyList<ModelMetadata> Models { get; internal set; } = [];
+
+    /// <summary>Decode a models response you already hold, with the client's own validation and error mapping.</summary>
+    public static ListModelsResponse FromHttpResponse(RawHttpResponse response)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        return ResponseDecoder.Parse(response, ResponseDecoder.Models, TimeProvider.System);
+    }
 }
 
 /// <summary>
@@ -204,6 +259,7 @@ internal static class ResponseDecoder
         var usage = new Usage(OptionalInt(raw, usageElement, "input_tokens", "usage"), OptionalInt(raw, usageElement, "output_tokens", "usage"));
 
         var answers = new Dictionary<string, Answer>();
+        var unmodeled = new Dictionary<string, JsonObject>();
         if (root.TryGetProperty("answers", out var answersElement))
         {
             if (answersElement.ValueKind != JsonValueKind.Object) throw raw.Invalid("answers");
@@ -237,6 +293,7 @@ internal static class ResponseDecoder
                     default:
                         // Forward-compat: skip answer kinds a future API adds rather than failing the response.
                         logger.LogWarning("Ignoring answer {Name} with unrecognized type {Type}", entry.Name, tag.GetString());
+                        unmodeled[entry.Name] = JsonNode.Parse(entry.Value.GetRawText())!.AsObject();
                         break;
                 }
             }
@@ -246,6 +303,7 @@ internal static class ResponseDecoder
         response.Model = model;
         response.Usage = usage;
         response.Answers = answers;
+        response.UnmodeledAnswers = unmodeled;
         Lift(raw, response, answers);
         return response;
     }
