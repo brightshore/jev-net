@@ -2,6 +2,9 @@
   <Folder Name="/src/">
     <Project Path="src/Jev.Net/Jev.Net.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Jev.Net.Samples/Jev.Net.Samples.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Jev.Net.Tests/Jev.Net.Tests.csproj" />
     <Project Path="tests/Jev.Net.AotSmoke/Jev.Net.AotSmoke.csproj" />

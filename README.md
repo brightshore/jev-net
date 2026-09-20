@@ -38,6 +38,7 @@ it — the two projects make different trade-offs on purpose, and both speak the
 
 ## Quick start
 
+<!-- snippet: quickstart -->
 ```csharp
 await using var client = new TypeSafeClient();            // key from TYPESAFE_API_KEY
 
@@ -64,6 +65,7 @@ name (`[JsonPropertyName]`, else the property name — exact, case-insensitive, 
 property is **required** — a missing answer, or one of the wrong kind, is a
 `TypeSafeApiResponseValidationException` naming the field — unless you mark it `[OptionalAnswer]`.
 
+<!-- snippet: ticket-class + ticket-call -->
 ```csharp
 sealed class Ticket : SystemOneResponse
 {
@@ -78,9 +80,10 @@ var ticket = await client.SystemOneAsync<Ticket>(state, questions);
 To read the body into a type that is entirely yours, pass JSON metadata — source-generated for trimmed and AOT
 apps, or reflection-based when that doesn't matter:
 
+<!-- snippet: own-type -->
 ```csharp
-var mine = await client.SystemOneAsync(state, questions, options: null, MyJsonContext.Default.MyEnvelope);   // AOT-safe
-var mine = await client.SystemOneAsync<MyEnvelope>(state, questions, options: null, ResponseJson.SnakeCase); // reflection
+var viaSourceGen  = await client.SystemOneAsync(state, questions, options: null, MyJsonContext.Default.MyEnvelope); // AOT-safe
+var viaReflection = await client.SystemOneAsync<MyEnvelope>(state, questions, options: null, ResponseJson.SnakeCase);
 ```
 
 ## State, instructions and criteria: `JsonContent`
@@ -94,6 +97,12 @@ and out, so one `JsonObject` can appear in several questions and a question can 
 `null` means *omit* for an optional field; `JsonContent.Null` means *send an explicit null*. A choice label
 mapped to `null` is sent as `null` (undescribed — interpreted by its name).
 
+**Limits.** The API documents at most 255 choice options and 2–10 score levels. Jev.Net, like the Python SDK,
+does not enforce these client-side — an out-of-range question comes back as a
+`TypeSafeUnprocessableEntityException` naming the field. What IS rejected before the network is structural, not
+schema: a null or missing state, an empty question set, a null question, an empty score rubric, and a raw
+question without a `type` (or a raw `choice`/`score` without `criteria`).
+
 ## Raw questions
 
 A `JsonObject` converts implicitly to a `Question` and is sent exactly as given — the escape hatch for fields or
@@ -105,6 +114,7 @@ and `score` have `criteria`; a score rubric is nonempty); its schema is left to 
 `TypeSafeClient` implements `ITypeSafeClient`, so your code can take the interface and your tests can hand it a
 fake — and the fake can return *genuine* responses, decoded and validated exactly as the client would:
 
+<!-- snippet: testing -->
 ```csharp
 var raw = new RawHttpResponse(200, headers: null, Encoding.UTF8.GetBytes(recordedJson));
 var response = SystemOneResponse.FromHttpResponse(raw);      // or FromHttpResponse<Ticket>(raw)
@@ -112,6 +122,24 @@ var response = SystemOneResponse.FromHttpResponse(raw);      // or FromHttpRespo
 
 The same call turns a cached or replayed body back into a response; a non-2xx snapshot throws the matching
 exception. To fake at the HTTP level instead, give the real client a `Handler`.
+
+## Samples
+
+[`samples/Jev.Net.Samples`](samples/Jev.Net.Samples) has three small programs in the shape of TypeSafe's
+cookbooks — each keeps the workflow in code and asks the model only for the judgment:
+
+| Sample | The idea |
+| --- | --- |
+| [`IntentRouting`](samples/Jev.Net.Samples/IntentRouting.cs) | Pick a handler, ask for each branch's argument *speculatively* in the same round trip, and send low-confidence or no-match cases to a person. |
+| [`ValueSelection`](samples/Jev.Net.Samples/ValueSelection.cs) | Select, don't generate: code finds every candidate amount, the model only points at the total, code parses it — so it cannot invent a number. |
+| [`CompositeScoring`](samples/Jev.Net.Samples/CompositeScoring.cs) | Score narrow dimensions once, then re-rank under different weights with no further calls. |
+
+```bash
+dotnet run --project samples/Jev.Net.Samples -f net10.0 -- routing     # needs TYPESAFE_API_KEY; the tests run all three offline
+```
+
+The C# blocks in this README are regions of [`ReadmeSnippets.cs`](samples/Jev.Net.Samples/ReadmeSnippets.cs) in
+that project: they are compiled on every build, and a test fails if the two drift apart.
 
 ## Errors
 
@@ -121,7 +149,7 @@ exception. To fake at the HTTP level instead, give the real client a `Handler`.
 | `TypeSafeApiException` | Any non-2xx. `Status`, `Body`, `Headers`, `Endpoint`, `RequestId`. |
 | `…BadRequest` / `Authentication` / `PermissionDenied` / `NotFound` / `UnprocessableEntity` | 400 / 401 / 403 / 404 / 422 |
 | `TypeSafeRateLimitException` | 429. `RetryAfter` is the server's requested wait. |
-| `TypeSafeInternalServerException` | 5xx |
+| `TypeSafeInternalServerException` | 5xx, including the API's 529 "service overloaded" — retried by default |
 | `TypeSafeApiConnectionException` | No HTTP response at all. |
 | `TypeSafeApiTimeoutException` | The per-attempt timeout elapsed (derives from the connection exception). |
 | `TypeSafeApiResponseValidationException` | A 2xx whose body is structurally wrong. `FieldPath` names the first bad field: `answers.tone.confidence`, `models[1].name`. |

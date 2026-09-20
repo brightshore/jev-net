@@ -29,6 +29,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Jev.Net\Jev.Net.csproj" />
+    <!-- An Exe, referenced as a library: the samples are run offline here, against a stub handler. -->
+    <ProjectReference Include="..\..\samples\Jev.Net.Samples\Jev.Net.Samples.csproj" />
   </ItemGroup>
 
 </Project>

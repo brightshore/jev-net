@@ -4,6 +4,12 @@
 
 All additive.
 
+- `samples/`: three runnable programs in the shape of TypeSafe's cookbooks (intent routing with a confidence
+  gate, select-don't-generate value extraction, composite scoring). The README's C# examples are now regions
+  of that project, compiled on every build and checked against the README by a test.
+- Documented the API's limits (255 choice options, 2–10 score levels, the 529 status). They are not enforced
+  client-side, as in the Python SDK; 529 is retried like any 5xx.
+
 - `SystemOneResponse.FromHttpResponse` / `ListModelsResponse.FromHttpResponse`, a public `RawHttpResponse`
   constructor and `RawHttpResponse.FromAsync(HttpResponseMessage)`: build a genuine, validated response from a
   cache, a recording, or a test. The Python SDK's `from_http_response`.
