@@ -18,7 +18,8 @@ public sealed class SampleTests
     [TestMethod]
     public async Task Routing_Reads_Only_The_Chosen_Branchs_Speculative_Answer()
     {
-        using var client = Clients.Create(_ => Http.Json(200, Intent("refund", 0.95, refundFull: 0.9, cancelNow: 0.9)));
+        // The two speculative answers DISAGREE in both calls, so reading the wrong branch's answer flips the result.
+        using var client = Clients.Create(_ => Http.Json(200, Intent("refund", 0.95, refundFull: 0.9, cancelNow: 0.2)));
         (await IntentRouting.RouteAsync(client, "charged twice")).Should().Be(new IntentRouting.Refund(WantsFullAmount: true));
 
         using var cancel = Clients.Create(_ => Http.Json(200, Intent("cancel", 0.95, refundFull: 0.9, cancelNow: 0.2)));

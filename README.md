@@ -99,8 +99,9 @@ mapped to `null` is sent as `null` (undescribed — interpreted by its name).
 
 **Limits.** The API documents at most 255 choice options and 2–10 score levels. Jev.Net, like the Python SDK,
 does not enforce these client-side — an out-of-range question comes back as a
-`TypeSafeUnprocessableEntityException` naming the field. Only an empty question set and an empty score rubric are
-rejected before the network.
+`TypeSafeUnprocessableEntityException` naming the field. What IS rejected before the network is structural, not
+schema: a null or missing state, an empty question set, a null question, an empty score rubric, and a raw
+question without a `type` (or a raw `choice`/`score` without `criteria`).
 
 ## Raw questions
 
