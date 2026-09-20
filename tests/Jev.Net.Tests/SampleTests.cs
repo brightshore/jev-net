@@ -66,6 +66,53 @@ public sealed class SampleTests
     }
 
     [TestMethod]
+    public async Task Ungrouped_Amounts_Are_Offered_Whole()
+    {
+        // "$1204.50" used to be offered as "$120" - a number that is nowhere in the document.
+        var handler = new StubHandler(request =>
+        {
+            var offered = request.Json!["questions"]!["total"]!["criteria"]!.AsObject()
+                .Where(c => c.Key != "none").Select(c => c.Value!.GetValue<string>()).ToList();
+            offered.Should().HaveCount(3);
+            offered[0].Should().StartWith("The amount $1100,");   // whole - not "$110" with a digit left behind
+            offered[2].Should().StartWith("The amount $1204.50,");
+            return Http.Json(200, Answers("""{"total": {"type": "choice", "choice": "candidate_2", "confidence": 0.9, "probabilities": {}}}"""));
+        });
+        using var client = Clients.Create(handler);
+
+        (await ValueSelection.InvoiceTotalAsync(client, "Widgets $1100 Tax $104.50 Total due $1204.50")).Should().Be(1204.50m);
+    }
+
+    [TestMethod]
+    [DataRow("candidate_bad")]
+    [DataRow("candidate_-1")]
+    [DataRow("candidate_99")]
+    [DataRow("candidate_")]
+    [DataRow("something_else")]
+    public async Task A_Label_That_Was_Never_Offered_Means_No_Value_Not_A_Crash(string label)
+    {
+        using var client = Clients.Create(_ => Http.Json(200, Answers(
+            """{"total": {"type": "choice", "choice": "<<0>>", "confidence": 0.9, "probabilities": {}}}""".With(0, label))));
+        (await ValueSelection.InvoiceTotalAsync(client, Invoice)).Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task More_Candidates_Than_The_Api_Allows_Keeps_The_Last_Ones()
+    {
+        var invoice = string.Join("\n", Enumerable.Range(1, 300).Select(i => $"Line {i} ${i}.00")) + "\nTotal due $99999.00";
+        var handler = new StubHandler(request =>
+        {
+            var criteria = request.Json!["questions"]!["total"]!["criteria"]!.AsObject();
+            criteria.Count.Should().Be(255, "254 candidates plus none - the documented maximum");
+            criteria["candidate_253"]!.GetValue<string>().Should().Contain("$99999.00", "the bottom of the invoice is what survives");
+            return Http.Json(200, Answers("""{"total": {"type": "choice", "choice": "candidate_253", "confidence": 0.9, "probabilities": {}}}"""));
+        });
+        using var client = Clients.Create(handler);
+
+        (await ValueSelection.InvoiceTotalAsync(client, invoice)).Should().Be(99999.00m);
+    }
+
+    [TestMethod]
     public async Task No_Candidates_Means_No_Call_And_None_Means_No_Value()
     {
         var silent = new StubHandler(_ => throw new AssertFailedException("nothing to choose from - no request should be made"));

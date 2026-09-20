@@ -1,11 +1,13 @@
 name: CI
 
+# README.md is deliberately NOT ignored below: its C# blocks are checked against compiled source by ReadmeTests,
+# and a README-only change is exactly the one that check exists for.
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'LICENSE', 'NOTICE', '.changeset/**']
+    paths-ignore: ['CHANGELOG.md', 'SECURITY.md', '.changeset/**', 'LICENSE', 'NOTICE']
   pull_request:
-    paths-ignore: ['**.md', 'LICENSE', 'NOTICE', '.changeset/**']
+    paths-ignore: ['CHANGELOG.md', 'SECURITY.md', '.changeset/**', 'LICENSE', 'NOTICE']
   workflow_dispatch:
 
 concurrency:
