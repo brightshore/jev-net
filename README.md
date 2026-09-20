@@ -214,8 +214,8 @@ requested and answering model, token counts and the `x-typesafe-request-id`.
 are: the model name you asked for (`jev_net.request.model`), and your base URL's host and path (`server.address`,
 `url.full` — never its credentials or query). A failed span's description is fixed text — `HTTP <status>`,
 `invalid response body`, `cancelled`, or the exception's type — never the server's message, which could echo
-your request. The per-attempt child spans are .NET's, not ours; so they stay clean too, the SDK never sends a
-base URL's `user:password@` on the wire and never adds a query string.
+your request. The per-attempt child spans are .NET's, not ours. To keep those clean as well, the SDK never
+sends a base URL's `user:password@` on the wire and never adds a query string.
 
 ## Python SDK → Jev.Net
 
