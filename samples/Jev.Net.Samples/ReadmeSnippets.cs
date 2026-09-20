@@ -50,6 +50,17 @@ internal static class ReadmeSnippets
         return (viaSourceGen, viaReflection);
     }
 
+    // Compiled against look-alikes below rather than the OpenTelemetry packages: what this proves is that
+    // TypeSafeTelemetry's constants exist under these names, which is the part of the snippet that is OURS.
+    public static void Telemetry(OpenTelemetryLookalike.Services services)
+    {
+        #region snippet:telemetry
+        services.AddOpenTelemetry()
+            .WithTracing(tracing => tracing.AddSource(TypeSafeTelemetry.ActivitySourceName))
+            .WithMetrics(metrics => metrics.AddMeter(TypeSafeTelemetry.MeterName));
+        #endregion
+    }
+
     public static SystemOneResponse Testing(string recordedJson)
     {
         #region snippet:testing
@@ -75,3 +86,25 @@ public sealed record MyEnvelope(string Model);
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(MyEnvelope))]
 public sealed partial class MyJsonContext : JsonSerializerContext;
+
+/// <summary>Just enough of OpenTelemetry's builder shape for the README's telemetry snippet to compile here
+/// without the samples project taking the OpenTelemetry packages.</summary>
+public static class OpenTelemetryLookalike
+{
+    public sealed class Services
+    {
+        public List<string> Sources { get; } = [];
+
+        public List<string> Meters { get; } = [];
+
+        public Services AddOpenTelemetry() => this;
+
+        public Services WithTracing(Action<Services> configure) { configure(this); return this; }
+
+        public Services WithMetrics(Action<Services> configure) { configure(this); return this; }
+
+        public Services AddSource(string name) { Sources.Add(name); return this; }
+
+        public Services AddMeter(string name) { Meters.Add(name); return this; }
+    }
+}

@@ -170,7 +170,7 @@ public sealed class TypeSafeClient : ITypeSafeClient, IDisposable, IAsyncDisposa
             }
         }
 
-        var request = _transport.Prepare(HttpMethod.Post, Protocol.SystemOnePath, body, options?.Timeout, options?.ExtraHeaders);
+        var request = _transport.Prepare(HttpMethod.Post, Protocol.SystemOnePath, body, options?.Timeout, options?.ExtraHeaders, "system_one");
         return _transport.SendAsync(request, options?.Retry, decode, cancellationToken);
     }
 
@@ -202,6 +202,6 @@ public sealed class ModelsResource : IModelsResource
     /// <exception cref="TypeSafeApiConnectionException">The request could not connect or timed out after any retries.</exception>
     public Task<ListModelsResponse> ListAsync(RequestOptions? options = null, CancellationToken cancellationToken = default) =>
         _transport.SendAsync(
-            _transport.Prepare(HttpMethod.Get, Protocol.ModelsPath, null, options?.Timeout, options?.ExtraHeaders),
+            _transport.Prepare(HttpMethod.Get, Protocol.ModelsPath, null, options?.Timeout, options?.ExtraHeaders, "models.list"),
             options?.Retry, ResponseDecoder.Models, cancellationToken);
 }

@@ -186,6 +186,37 @@ not**: they are whatever state you sent. Don't enable Debug where that matters.
 
 Pin a model (`jev-1.13.0`, not `jev-latest`) wherever you have tuned thresholds against its probabilities.
 
+## Observability
+
+Traces and metrics come through `ActivitySource` and `Meter`, which ship in the .NET runtime — so
+OpenTelemetry support costs **no dependency** — and with nobody listening, the SDK skips the bookkeeping entirely.
+
+<!-- snippet: telemetry -->
+```csharp
+services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddSource(TypeSafeTelemetry.ActivitySourceName))
+    .WithMetrics(metrics => metrics.AddMeter(TypeSafeTelemetry.MeterName));
+```
+
+One client span covers one SDK call *including its retries* (`http.request.resend_count`). The individual HTTP
+attempts are not duplicated here: they come from .NET's own HTTP instrumentation, and appear beneath this span
+**only if you turn that on as well** — `.AddHttpClientInstrumentation()` from `OpenTelemetry.Instrumentation.Http`,
+or `.AddSource("System.Net.Http")`. The snippet above subscribes to Jev.Net alone. It carries the operation, status,
+requested and answering model, token counts and the `x-typesafe-request-id`.
+
+| Instrument | |
+| --- | --- |
+| `jev_net.client.request.duration` | Histogram, seconds — the whole call, waits included. Tagged with operation, status, `error.type`. |
+| `jev_net.client.retries` | Counter — attempts after the first. |
+| `jev_net.client.token.usage` | Counter — tagged `jev_net.token.type` = `input` \| `output`, and the answering model. |
+
+**None of your content is recorded** — no state, questions, answers or headers. Two things you *configure*
+are: the model name you asked for (`jev_net.request.model`), and your base URL's host and path (`server.address`,
+`url.full` — never its credentials or query). A failed span's description is fixed text — `HTTP <status>`,
+`invalid response body`, `cancelled`, or the exception's type — never the server's message, which could echo
+your request. The per-attempt child spans are .NET's, not ours. To keep those clean as well, the SDK never
+sends a base URL's `user:password@` on the wire and never adds a query string.
+
 ## Python SDK → Jev.Net
 
 If you know `typesafe-sdk`, you already know this. Everything in the left column behaves the same on the right.
@@ -230,6 +261,7 @@ If you know `typesafe-sdk`, you already know this. Everything in the left column
 * **Optional answers are marked, not inferred.** Python reads `Optional[...]`; here a property is required unless
   it carries `[OptionalAnswer]`. Nullability is metadata the trimmer removes, so inferring from it would make the
   same class validate differently in a Native AOT build.
+* **Traces and metrics** (`ActivitySource` / `Meter`) — upstream has neither; this is what a .NET service expects.
 * **`TimeProvider`** is accepted for the retry clock — a .NET addition. So are `ITypeSafeClient`,
   `result.UnmodeledAnswers` (the receiving half of raw questions), `ScoreAnswer.MostLikely` (the mode, beside the
   averaged `Score`) and `TypeSafeDefaults.SdkVersion`.

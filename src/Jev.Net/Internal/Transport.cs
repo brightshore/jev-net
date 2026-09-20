@@ -9,9 +9,67 @@ namespace Jev.Net.Internal;
 
 /// <summary>An immutable description of one HTTP request to send — possibly several times.</summary>
 internal sealed record PreparedRequest(
-    HttpMethod Method, Uri Url, IReadOnlyList<KeyValuePair<string, string>> Headers, byte[]? Content, TimeSpan Timeout)
+    HttpMethod Method, Uri Url, IReadOnlyList<KeyValuePair<string, string>> Headers, byte[]? Content, TimeSpan Timeout,
+    string Operation, string? Model = null)
 {
     public string Endpoint => $"{Method.Method} {Url.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped)}";
+}
+
+/// <summary>What the wire said about one SDK call, kept apart from the decoded result: a caller's own response
+/// type carries no HTTP metadata, and telemetry must not depend on which overload was used.</summary>
+internal sealed class CallFacts
+{
+    public int Attempts { get; set; }
+
+    /// <summary>Status of the LAST response received, if any attempt got one.</summary>
+    public int? Status { get; private set; }
+
+    public string? RequestId { get; private set; }
+
+    public string? ResponseModel { get; private set; }
+
+    public int? InputTokens { get; private set; }
+
+    public int? OutputTokens { get; private set; }
+
+    public void Observe(RawHttpResponse raw)
+    {
+        Status = raw.StatusCode;
+        RequestId = raw.Headers.TryGetValue(Protocol.RequestIdHeader, out var id) ? id : null;
+    }
+
+    /// <summary>The answering model and token counts. From the decoded response when it is ours; otherwise
+    /// read straight off the body, because a caller's own type need not declare either field.</summary>
+    public void Observe(object decoded, RawHttpResponse raw, string operation)
+    {
+        if (decoded is SystemOneResponse response)
+        {
+            (ResponseModel, InputTokens, OutputTokens) = (response.Model, response.Usage.InputTokens, response.Usage.OutputTokens);
+            return;
+        }
+
+        if (operation != "system_one")
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(raw.Content);
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+            if (root.TryGetProperty("model", out var model) && model.ValueKind == System.Text.Json.JsonValueKind.String) ResponseModel = model.GetString();
+            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (usage.TryGetProperty("input_tokens", out var input) && input.TryGetInt32(out var i)) InputTokens = i;
+                if (usage.TryGetProperty("output_tokens", out var output) && output.TryGetInt32(out var o)) OutputTokens = o;
+            }
+        }
+        catch (Exception error) when (error is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            // Telemetry never fails a call that succeeded.
+        }
+    }
 }
 
 /// <summary>Shared HTTP request preparation, logging, retrying, and dispatch to response types.</summary>
@@ -28,7 +86,8 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
     public Config Config => config;
 
     public PreparedRequest Prepare(
-        HttpMethod method, string path, JsonNode? body, TimeSpan? timeout, IReadOnlyDictionary<string, string>? headers)
+        HttpMethod method, string path, JsonNode? body, TimeSpan? timeout, IReadOnlyDictionary<string, string>? headers,
+        string operation)
     {
         // Later entries win, case-insensitively: client defaults, then the call's extras, then the protected set.
         var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -68,17 +127,64 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         try
         {
             url = new Uri(config.BaseUrl + path, UriKind.Absolute);
+            if (url.UserInfo.Length > 0)
+            {
+                // `https://user:pw@host` in a base URL. HttpClient never turns userinfo into credentials, so it
+                // does nothing on the wire - but it WOULD ride along in the request URI, which is what .NET's own
+                // System.Net.Http instrumentation reads for the per-attempt child spans. Our span strips it;
+                // dropping it here keeps it out of theirs too.
+                url = new UriBuilder(url) { UserName = "", Password = "" }.Uri;
+            }
         }
         catch (UriFormatException error)
         {
             throw new TypeSafeException($"The base URL '{config.BaseUrl}' is not a valid absolute URL.", error);
         }
 
-        return new PreparedRequest(method, url, merged.ToList(), content, Timeouts.Checked(timeout ?? config.Timeout));
+        var model = body?["model"] is JsonValue modelNode && modelNode.TryGetValue<string>(out var modelName) ? modelName : null;
+        return new PreparedRequest(method, url, merged.ToList(), content, Timeouts.Checked(timeout ?? config.Timeout), operation, model);
     }
 
+    /// <summary>One SDK call: a span and the metrics around <see cref="SendCoreAsync{T}"/>, which does the work.
+    /// When nobody listens, StartActivity returns null and the instruments are no-ops.</summary>
     public async Task<T> SendAsync<T>(
         PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CancellationToken ct) where T : class
+    {
+        using var activity = TypeSafeTelemetry.Source.StartActivity($"{request.Method.Method} {request.Url.AbsolutePath}", ActivityKind.Client);
+        if (activity is not null)
+        {
+            activity.SetTag("jev_net.operation", request.Operation);
+            activity.SetTag("http.request.method", request.Method.Method);
+            activity.SetTag("server.address", request.Url.Host);
+            activity.SetTag("url.full", request.Url.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
+        }
+
+        // Nobody listening (the usual case): no facts object, no stopwatch, no Record - just the call.
+        if (activity is null && !TypeSafeTelemetry.MetricsEnabled)
+        {
+            return await SendCoreAsync(request, overridePolicy, decode, null, ct).ConfigureAwait(false);
+        }
+
+        var started = Stopwatch.GetTimestamp();
+        var call = new CallFacts();
+        Exception? failure = null;
+        try
+        {
+            return await SendCoreAsync(request, overridePolicy, decode, call, ct).ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            failure = error;
+            throw;
+        }
+        finally
+        {
+            TypeSafeTelemetry.Record(activity, request.Operation, request.Url, request.Model, Stopwatch.GetElapsedTime(started), call, failure);
+        }
+    }
+
+    private async Task<T> SendCoreAsync<T>(
+        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CallFacts? call, CancellationToken ct) where T : class
     {
         var policy = overridePolicy ?? retry;
         var started = _clock.GetTimestamp();
@@ -87,11 +193,15 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         while (true)
         {
             attempt++;
+            if (call is not null) call.Attempts = attempt;
             Exception failure;
             try
             {
                 var raw = await AttemptAsync(request, attempt, ct).ConfigureAwait(false);
-                return ResponseDecoder.Parse(raw, decode, _clock);
+                call?.Observe(raw);
+                var decoded = ResponseDecoder.Parse(raw, decode, _clock);
+                call?.Observe(decoded, raw, request.Operation);
+                return decoded;
             }
             catch (Exception error) when (error is not OperationCanceledException && policy.Retryable(error))
             {
