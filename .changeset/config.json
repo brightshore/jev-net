@@ -1,0 +1,11 @@
+{
+  "$schema": "https://rigsmith.dev/schemas/changeset-config.json",
+  "baseBranch": "main",
+  "access": "public",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "Jev.Net.Tests"
+  ],
+  "linked": [],
+  "fixed": []
+}

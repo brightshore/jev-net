@@ -1,0 +1,11 @@
+{
+  // shiprig release pipeline. Build + publish are DELEGATED TO CI: pushing the tag `Jev.Net@x.y.z` triggers
+  // .github/workflows/release.yml, which tests, packs and publishes to nuget.org via trusted publishing (OIDC).
+  // shiprig here only versions, commits, tags and pushes — so no NuGet API key ever exists on a laptop.
+  "tool": "shiprig",
+  "order": ["version", "commit", "tag", "push"],
+  "steps": {
+    // Pause for confirmation before the tag leaves the machine — a NuGet version is permanent.
+    "push": { "confirm": true }
+  }
+}

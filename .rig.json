@@ -1,0 +1,6 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JohnCampionJr/rig/main/node/rig.schema.json",
+  "dotnet": {
+    "solution": "Jev.Net.slnx"
+  }
+}

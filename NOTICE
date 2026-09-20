@@ -1,0 +1,12 @@
+Jev.Net
+Copyright (c) 2026 Brightshore
+
+Jev.Net is an unofficial C# port of the official TypeSafe AI Python SDK
+(https://github.com/typesafe-ai/typesafe-sdk-python), which is
+Copyright (c) TypeSafe AI and distributed under the MIT License. It was read
+at release 0.7.0. Request shape, header protection, error mapping and message
+text, retry and Retry-After handling, and response validation paths follow
+that library, and the test suite mirrors that library's tests.
+
+"TypeSafe", "Jev" and "System One" are names of TypeSafe AI's products. This
+project is not affiliated with, sponsored by, or endorsed by TypeSafe AI.

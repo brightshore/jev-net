@@ -1,0 +1,119 @@
+name: Release
+
+# Tag-triggered release: packs Jev.Net and pushes it to nuget.org via TRUSTED PUBLISHING (OIDC) — there is no
+# API key secret in this repository, and nothing long-lived to leak or rotate.
+#
+# Trigger: shiprig pushes the tag `Jev.Net@1.2.3` (see .changeset/release.jsonc), or run manually
+# (workflow_dispatch, which defaults to a dry run = pack only). Versioning is owned by shiprig; this only
+# builds, tests and ships.
+#
+# Prereqs, both one-time and both on the nuget.org side or in repo settings:
+#   1. A nuget.org trusted-publishing policy naming owner `brightshore`, repository `jev-net`, workflow file
+#      `release.yml`. (nuget.org -> your account -> Trusted Publishing.)
+#   2. Repo variable NUGET_USER = the nuget.org username that owns the policy.
+
+on:
+  push:
+    tags: ['Jev.Net@*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to pack (e.g. 1.2.3 or 1.2.3-preview.1)
+        required: true
+      dry_run:
+        description: Pack only, do not push
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    name: test + pack + push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write   # create the GitHub Release
+      id-token: write   # required for NuGet trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Resolve version + publish gate
+        id: cfg
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            version="${GITHUB_REF_NAME##*@}"   # Jev.Net@1.2.3 -> 1.2.3
+            publish=true
+          else
+            version="${{ inputs.version }}"
+            publish=$([ "${{ inputs.dry_run }}" = "false" ] && echo true || echo false)
+          fi
+          [ -n "$version" ] || { echo "::error::no version resolved"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Version=$version  Publish=$publish"
+
+      # A NuGet version is permanent, so the suite runs HERE too rather than trusting that main was green.
+      - name: Build
+        run: >
+          dotnet build Jev.Net.slnx --configuration Release
+          -p:Version=${{ steps.cfg.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test --solution Jev.Net.slnx --configuration Release --no-build
+
+      - name: Pack
+        run: >
+          dotnet pack src/Jev.Net/Jev.Net.csproj --configuration Release --no-build --output artifacts
+          -p:Version=${{ steps.cfg.outputs.version }}
+          -p:ContinuousIntegrationBuild=true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: artifacts/*
+          if-no-files-found: error
+
+      - name: NuGet trusted-publishing login
+        if: steps.cfg.outputs.publish == 'true'
+        id: nuget
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push
+        if: steps.cfg.outputs.publish == 'true'
+        shell: bash
+        run: |
+          # The .snupkg beside each .nupkg is pushed with it automatically.
+          for pkg in artifacts/*.nupkg; do
+            dotnet nuget push "$pkg" \
+              --api-key "${{ steps.nuget.outputs.NUGET_API_KEY }}" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done
+
+      - name: GitHub Release
+        if: github.event_name == 'push' && steps.cfg.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          ver="${{ steps.cfg.outputs.version }}"
+          pre=""
+          case "$ver" in *-*) pre="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Jev.Net $ver" \
+            --generate-notes \
+            $pre \
+            artifacts/*.nupkg

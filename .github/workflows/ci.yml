@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'LICENSE', 'NOTICE', '.changeset/**']
+  pull_request:
+    paths-ignore: ['**.md', 'LICENSE', 'NOTICE', '.changeset/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux always. Windows because paths, line endings and culture are where a port usually slips.
+        # No macOS leg: it bills at 10x and nothing here is platform-specific enough to pay for it.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build (warnings are errors; both target frameworks)
+        run: dotnet build Jev.Net.slnx --configuration Release
+      # Offline by construction: the live tests need TYPESAFE_LIVE_TESTS=1 AND a key, and CI sets neither.
+      - name: Test
+        run: dotnet test --solution Jev.Net.slnx --configuration Release --no-build
+      - name: Pack (proves the package still assembles)
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet pack src/Jev.Net/Jev.Net.csproj --configuration Release --no-build --output artifacts
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: nupkg
+          path: artifacts/*
