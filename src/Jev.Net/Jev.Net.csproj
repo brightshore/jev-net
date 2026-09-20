@@ -38,7 +38,7 @@
          since then go unchecked - scripts/check-baseline.sh enforces that in CI, so it cannot quietly decay.
          A deliberate break is a suppression file plus a version bump, never a silent one. -->
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>0.2.0</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>0.4.0</PackageValidationBaselineVersion>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
