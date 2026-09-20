@@ -109,12 +109,69 @@ public sealed class TelemetryTests
     }
 
     [TestMethod]
+    public async Task A_Callers_Own_Response_Type_Still_Reports_The_Model_And_Tokens()
+    {
+        using var capture = new Capture();
+        using var client = Clients.Create(new StubHandler(_ => Http.Json(200, ClientTests.Result)), baseUrl: capture.BaseUrl);
+
+        await client.SystemOneAsync("x", Clients.OneQuestion, null, TestJsonContext.Default.Envelope);
+
+        var span = capture.Spans.Should().ContainSingle().Which;
+        span.GetTagItem("jev_net.response.model").Should().Be("jev-latest");
+        span.GetTagItem("jev_net.usage.input_tokens").Should().Be(12);
+        capture.Of(TypeSafeTelemetry.TokenUsage).Select(t => t.Value).Should().BeEquivalentTo([12.0, 3.0]);
+    }
+
+    [TestMethod]
+    public async Task A_Malformed_200_Is_Not_Reported_As_Error_Type_200()
+    {
+        using var capture = new Capture();
+        using var client = Clients.Create(new StubHandler(_ => Http.Json(200, """{"model": "m", "usage": {}, "answers": {"n": {"type": "noul"}}}""")),
+            baseUrl: capture.BaseUrl);
+
+        await client.Invoking(c => c.SystemOneAsync("x", Clients.OneQuestion)).Should().ThrowAsync<TypeSafeApiResponseValidationException>();
+
+        var span = capture.Spans.Should().ContainSingle().Which;
+        span.GetTagItem("error.type").Should().Be("TypeSafeApiResponseValidationException");
+        span.GetTagItem("http.response.status_code").Should().Be(200, "the HTTP exchange did succeed - that is still true");
+        span.StatusDescription.Should().Be("invalid response body");
+        capture.Of(TypeSafeTelemetry.TokenUsage).Should().BeEmpty("a response we could not use has no usage worth counting");
+    }
+
+    [TestMethod]
+    public async Task Base_Url_Credentials_Never_Reach_The_Request_Uri()
+    {
+        // .NET's own HTTP instrumentation builds its per-attempt spans from the request URI, so THIS is what has
+        // to be clean - the stub sees exactly what that instrumentation would.
+        var handler = new StubHandler(_ => Http.Json(200, """{"models": []}"""));
+        using var client = Clients.Create(handler, baseUrl: "https://user:hunter2@creds.test/prefix");
+
+        await client.Models.ListAsync();
+
+        var sent = handler.Requests.Should().ContainSingle().Which.Url;
+        sent.UserInfo.Should().BeEmpty();
+        sent.ToString().Should().Be("https://creds.test/prefix/v1/models");
+        sent.Query.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task With_Nobody_Listening_The_Call_Simply_Works()
+    {
+        // No Capture here, so (unless a parallel test is listening) the transport takes its no-telemetry path.
+        using var client = Clients.Create(new StubHandler(_ => Http.Json(200, ClientTests.Result)), baseUrl: "https://quiet.test");
+        (await client.SystemOneAsync("x", Clients.OneQuestion)).Model.Should().Be("jev-latest");
+    }
+
+    [TestMethod]
     public async Task Duration_Retries_And_Tokens_Are_Measured()
     {
         using var capture = new Capture();
         var attempts = 0;
-        using var client = Clients.Create(new StubHandler(_ => ++attempts < 3 ? Http.Json(503, "{}") : Http.Json(200, ClientTests.Result)),
-            baseUrl: capture.BaseUrl, retry: new RetryPolicy { BackoffInitial = TimeSpan.Zero });
+        using var client = Clients.Create(new StubHandler(async (_, ct) =>
+        {
+            await Task.Delay(25, ct);
+            return ++attempts < 3 ? Http.Json(503, "{}") : Http.Json(200, ClientTests.Result);
+        }), baseUrl: capture.BaseUrl, retry: new RetryPolicy { BackoffInitial = TimeSpan.Zero });
 
         await client.SystemOneAsync("x", Clients.OneQuestion);
 
@@ -122,7 +179,9 @@ public sealed class TelemetryTests
         capture.Of(TypeSafeTelemetry.Retries).Should().ContainSingle().Which.Value.Should().Be(2);
 
         var duration = capture.Of(TypeSafeTelemetry.RequestDuration).Should().ContainSingle().Which;
-        duration.Value.Should().BeGreaterThanOrEqualTo(0);
+        // Three attempts of >= 25ms each, measured in SECONDS: a value in milliseconds, or one that timed only the
+        // last attempt, falls outside this window.
+        duration.Value.Should().BeInRange(0.06, 30);
         duration.Tags["jev_net.operation"].Should().Be("system_one");
         duration.Tags["http.response.status_code"].Should().Be(200);
         duration.Tags.Should().NotContainKey("error.type");
@@ -183,7 +242,10 @@ public sealed class TelemetryTests
     {
         TypeSafeTelemetry.ActivitySourceName.Should().Be("Jev.Net");
         TypeSafeTelemetry.MeterName.Should().Be("Jev.Net");
-        new[] { TypeSafeTelemetry.RequestDuration, TypeSafeTelemetry.Retries, TypeSafeTelemetry.TokenUsage }
-            .Should().OnlyContain(name => name.StartsWith("jev_net.client.", StringComparison.Ordinal));
+        // Literals on purpose. These strings are what people type into dashboards and alert rules; every other
+        // test reaches them THROUGH the constants, so a typo in a constant would pass everything else.
+        TypeSafeTelemetry.RequestDuration.Should().Be("jev_net.client.request.duration");
+        TypeSafeTelemetry.Retries.Should().Be("jev_net.client.retries");
+        TypeSafeTelemetry.TokenUsage.Should().Be("jev_net.client.token.usage");
     }
 }

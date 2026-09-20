@@ -5,7 +5,9 @@
 - **Traces and metrics, with no new dependency.** An `ActivitySource` and a `Meter`, both named `Jev.Net`
   (`TypeSafeTelemetry.ActivitySourceName` / `MeterName`): one client span per call including its retries, and
   `jev_net.client.request.duration`, `.retries` and `.token.usage`. None of your content is recorded (the model
-  name and base-URL host you configured are), and there is no cost when nobody is listening.
+  name and base-URL host you configured are), and the bookkeeping is skipped when nobody is listening.
+- A base URL's `user:password@` is no longer sent on the request URI. `HttpClient` never used it as
+  credentials; this keeps it out of .NET's own per-attempt HTTP spans.
 
 ## 0.3.0
 

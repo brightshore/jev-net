@@ -189,7 +189,7 @@ Pin a model (`jev-1.13.0`, not `jev-latest`) wherever you have tuned thresholds 
 ## Observability
 
 Traces and metrics come through `ActivitySource` and `Meter`, which ship in the .NET runtime — so
-OpenTelemetry support costs **no dependency**, and nothing at all when nobody is listening.
+OpenTelemetry support costs **no dependency** — and with nobody listening, the SDK skips the bookkeeping entirely.
 
 <!-- snippet: telemetry -->
 ```csharp
@@ -210,8 +210,10 @@ requested and answering model, token counts and the `x-typesafe-request-id`.
 
 **None of your content is recorded** — no state, questions, answers or headers. Two things you *configure*
 are: the model name you asked for (`jev_net.request.model`), and your base URL's host and path (`server.address`,
-`url.full` — never its credentials or query). A failed span's description is a fixed `HTTP 429`, not the
-server's message, which could echo your request.
+`url.full` — never its credentials or query). A failed span's description is fixed text — `HTTP <status>`,
+`invalid response body`, `cancelled`, or the exception's type — never the server's message, which could echo
+your request. The per-attempt child spans are .NET's, not ours; so they stay clean too, the SDK never sends a
+base URL's `user:password@` on the wire and never adds a query string.
 
 ## Python SDK → Jev.Net
 

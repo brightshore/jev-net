@@ -22,9 +22,54 @@ internal sealed class CallFacts
     public int Attempts { get; set; }
 
     /// <summary>Status of the LAST response received, if any attempt got one.</summary>
-    public int? Status { get; set; }
+    public int? Status { get; private set; }
 
-    public string? RequestId { get; set; }
+    public string? RequestId { get; private set; }
+
+    public string? ResponseModel { get; private set; }
+
+    public int? InputTokens { get; private set; }
+
+    public int? OutputTokens { get; private set; }
+
+    public void Observe(RawHttpResponse raw)
+    {
+        Status = raw.StatusCode;
+        RequestId = raw.Headers.TryGetValue(Protocol.RequestIdHeader, out var id) ? id : null;
+    }
+
+    /// <summary>The answering model and token counts. From the decoded response when it is ours; otherwise
+    /// read straight off the body, because a caller's own type need not declare either field.</summary>
+    public void Observe(object decoded, RawHttpResponse raw, string operation)
+    {
+        if (decoded is SystemOneResponse response)
+        {
+            (ResponseModel, InputTokens, OutputTokens) = (response.Model, response.Usage.InputTokens, response.Usage.OutputTokens);
+            return;
+        }
+
+        if (operation != "system_one")
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(raw.Content);
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+            if (root.TryGetProperty("model", out var model) && model.ValueKind == System.Text.Json.JsonValueKind.String) ResponseModel = model.GetString();
+            if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (usage.TryGetProperty("input_tokens", out var input) && input.TryGetInt32(out var i)) InputTokens = i;
+                if (usage.TryGetProperty("output_tokens", out var output) && output.TryGetInt32(out var o)) OutputTokens = o;
+            }
+        }
+        catch (Exception error) when (error is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            // Telemetry never fails a call that succeeded.
+        }
+    }
 }
 
 /// <summary>Shared HTTP request preparation, logging, retrying, and dispatch to response types.</summary>
@@ -82,6 +127,14 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         try
         {
             url = new Uri(config.BaseUrl + path, UriKind.Absolute);
+            if (url.UserInfo.Length > 0)
+            {
+                // `https://user:pw@host` in a base URL. HttpClient never turns userinfo into credentials, so it
+                // does nothing on the wire - but it WOULD ride along in the request URI, which is what .NET's own
+                // System.Net.Http instrumentation reads for the per-attempt child spans. Our span strips it;
+                // dropping it here keeps it out of theirs too.
+                url = new UriBuilder(url) { UserName = "", Password = "" }.Uri;
+            }
         }
         catch (UriFormatException error)
         {
@@ -106,13 +159,18 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             activity.SetTag("url.full", request.Url.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped));
         }
 
+        // Nobody listening (the usual case): no facts object, no stopwatch, no Record - just the call.
+        if (activity is null && !TypeSafeTelemetry.MetricsEnabled)
+        {
+            return await SendCoreAsync(request, overridePolicy, decode, null, ct).ConfigureAwait(false);
+        }
+
         var started = Stopwatch.GetTimestamp();
         var call = new CallFacts();
-        T? result = null;
         Exception? failure = null;
         try
         {
-            return result = await SendCoreAsync(request, overridePolicy, decode, call, ct).ConfigureAwait(false);
+            return await SendCoreAsync(request, overridePolicy, decode, call, ct).ConfigureAwait(false);
         }
         catch (Exception error)
         {
@@ -121,13 +179,12 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         }
         finally
         {
-            TypeSafeTelemetry.Record(activity, request.Operation, request.Url, request.Model, Stopwatch.GetElapsedTime(started),
-                call, result as SystemOneResponse, failure);
+            TypeSafeTelemetry.Record(activity, request.Operation, request.Url, request.Model, Stopwatch.GetElapsedTime(started), call, failure);
         }
     }
 
     private async Task<T> SendCoreAsync<T>(
-        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CallFacts call, CancellationToken ct) where T : class
+        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CallFacts? call, CancellationToken ct) where T : class
     {
         var policy = overridePolicy ?? retry;
         var started = _clock.GetTimestamp();
@@ -135,14 +192,16 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
 
         while (true)
         {
-            call.Attempts = ++attempt;
+            attempt++;
+            if (call is not null) call.Attempts = attempt;
             Exception failure;
             try
             {
                 var raw = await AttemptAsync(request, attempt, ct).ConfigureAwait(false);
-                call.Status = raw.StatusCode;
-                call.RequestId = raw.Headers.TryGetValue(Protocol.RequestIdHeader, out var id) ? id : null;
-                return ResponseDecoder.Parse(raw, decode, _clock);
+                call?.Observe(raw);
+                var decoded = ResponseDecoder.Parse(raw, decode, _clock);
+                call?.Observe(decoded, raw, request.Operation);
+                return decoded;
             }
             catch (Exception error) when (error is not OperationCanceledException && policy.Retryable(error))
             {

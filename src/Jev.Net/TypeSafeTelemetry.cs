@@ -5,8 +5,8 @@ namespace Jev.Net;
 
 /// <summary>
 /// The names to subscribe to. Jev.Net emits traces and metrics through <see cref="ActivitySource"/> and
-/// <see cref="Meter"/>, which ship in the .NET runtime — so this costs no dependency, and nothing at all when
-/// nobody is listening. With OpenTelemetry:
+/// <see cref="Meter"/>, which ship in the .NET runtime — so this costs no dependency, and with nobody listening
+/// the transport skips the bookkeeping altogether (one null check and one flag read per call). With OpenTelemetry:
 /// <code>
 /// builder.Services.AddOpenTelemetry()
 ///     .WithTracing(t => t.AddSource(TypeSafeTelemetry.ActivitySourceName))
@@ -20,6 +20,9 @@ namespace Jev.Net;
 /// <para><b>None of your content is recorded</b> — no state, no questions, no answers, no headers. Two things you
 /// CONFIGURE are: the model name you asked for (<c>jev_net.request.model</c>) and the host and path of your
 /// base URL (<c>server.address</c>, <c>url.full</c>, without credentials or query). Keep secrets out of both.</para>
+/// <para>That describes THIS span. The per-attempt child spans belong to <c>System.Net.Http</c>'s instrumentation
+/// and follow its rules; to keep them clean too, the SDK never puts a base URL's <c>user:password@</c> on the
+/// request it sends, and never adds a query string.</para>
 /// </remarks>
 public static class TypeSafeTelemetry
 {
@@ -50,10 +53,14 @@ public static class TypeSafeTelemetry
     private static readonly Counter<long> Tokens = Metrics.CreateCounter<long>(
         TokenUsage, unit: "{token}", description: "Tokens reported by the API, by type.");
 
+    /// <summary>Whether any metrics listener is subscribed. With no span and none of these, the transport skips
+    /// its telemetry bookkeeping entirely.</summary>
+    internal static bool MetricsEnabled => Duration.Enabled || RetryCount.Enabled || Tokens.Enabled;
+
     /// <summary>What one call measured, written to the span and the instruments together so they cannot disagree.</summary>
     internal static void Record(
         Activity? activity, string operation, Uri url, string? requestedModel, TimeSpan elapsed, Internal.CallFacts call,
-        SystemOneResponse? response, Exception? error)
+        Exception? error)
     {
         var attempts = Math.Max(call.Attempts, 1);
         // From the wire, not from the decoded object: a caller's own response type (the JsonTypeInfo overloads)
@@ -62,6 +69,9 @@ public static class TypeSafeTelemetry
         var errorType = error switch
         {
             null => null,
+            // A 2xx whose BODY was unusable. The HTTP exchange succeeded, so "200" would be a lie about what
+            // failed - and indistinguishable from a healthy call on a dashboard grouped by error.type.
+            TypeSafeApiResponseValidationException => nameof(TypeSafeApiResponseValidationException),
             TypeSafeApiException api => api.Status.ToString(System.Globalization.CultureInfo.InvariantCulture),
             OperationCanceledException => "cancelled",
             _ => error.GetType().Name,
@@ -80,12 +90,12 @@ public static class TypeSafeTelemetry
             RetryCount.Add(attempts - 1, new TagList { { "jev_net.operation", operation }, { "server.address", url.Host } });
         }
 
-        if (response is not null)
+        if (error is null && call.ResponseModel is not null)
         {
-            var model = new KeyValuePair<string, object?>("jev_net.response.model", response.Model);
+            var model = new KeyValuePair<string, object?>("jev_net.response.model", call.ResponseModel);
             var server = new KeyValuePair<string, object?>("server.address", url.Host);
-            if (response.Usage.InputTokens is { } input) Tokens.Add(input, model, server, new("jev_net.token.type", "input"));
-            if (response.Usage.OutputTokens is { } output) Tokens.Add(output, model, server, new("jev_net.token.type", "output"));
+            if (call.InputTokens is { } input) Tokens.Add(input, model, server, new("jev_net.token.type", "input"));
+            if (call.OutputTokens is { } output) Tokens.Add(output, model, server, new("jev_net.token.type", "output"));
         }
 
         if (activity is null)
@@ -96,11 +106,11 @@ public static class TypeSafeTelemetry
         activity.SetTag("http.request.resend_count", attempts - 1);
         if (status is not null) activity.SetTag("http.response.status_code", status.Value);
         if (requestedModel is not null) activity.SetTag("jev_net.request.model", requestedModel);
-        if (response is not null)
+        if (error is null && call.ResponseModel is not null)
         {
-            activity.SetTag("jev_net.response.model", response.Model);
-            if (response.Usage.InputTokens is { } input) activity.SetTag("jev_net.usage.input_tokens", input);
-            if (response.Usage.OutputTokens is { } output) activity.SetTag("jev_net.usage.output_tokens", output);
+            activity.SetTag("jev_net.response.model", call.ResponseModel);
+            if (call.InputTokens is { } input) activity.SetTag("jev_net.usage.input_tokens", input);
+            if (call.OutputTokens is { } output) activity.SetTag("jev_net.usage.output_tokens", output);
         }
 
         var requestId = (error as TypeSafeApiException)?.RequestId ?? call.RequestId;
@@ -113,6 +123,7 @@ public static class TypeSafeTelemetry
             // message falls back to the raw response text, and a server is free to echo the request in that.
             activity.SetStatus(ActivityStatusCode.Error, error switch
             {
+                TypeSafeApiResponseValidationException => "invalid response body",
                 TypeSafeApiException api => $"HTTP {api.Status.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
                 OperationCanceledException => "cancelled",
                 _ => error.GetType().Name,
