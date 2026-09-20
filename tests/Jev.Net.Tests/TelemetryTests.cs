@@ -92,6 +92,23 @@ public sealed class TelemetryTests
     }
 
     [TestMethod]
+    public async Task A_Callers_Own_Response_Type_Still_Reports_Status_And_Request_Id()
+    {
+        // Envelope is an ordinary record: no TypeSafeResponse base, so nothing on the OBJECT says what the HTTP
+        // status or request id was. The span and the histogram must get them from the wire regardless.
+        using var capture = new Capture();
+        using var client = Clients.Create(new StubHandler(_ => Http.Json(200, ClientTests.Result, ("x-typesafe-request-id", "req-custom"))),
+            baseUrl: capture.BaseUrl);
+
+        await client.SystemOneAsync("x", Clients.OneQuestion, null, TestJsonContext.Default.Envelope);
+
+        var span = capture.Spans.Should().ContainSingle().Which;
+        span.GetTagItem("http.response.status_code").Should().Be(200);
+        span.GetTagItem("jev_net.request_id").Should().Be("req-custom");
+        capture.Of(TypeSafeTelemetry.RequestDuration).Should().ContainSingle().Which.Tags["http.response.status_code"].Should().Be(200);
+    }
+
+    [TestMethod]
     public async Task Duration_Retries_And_Tokens_Are_Measured()
     {
         using var capture = new Capture();

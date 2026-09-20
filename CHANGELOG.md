@@ -4,8 +4,8 @@
 
 - **Traces and metrics, with no new dependency.** An `ActivitySource` and a `Meter`, both named `Jev.Net`
   (`TypeSafeTelemetry.ActivitySourceName` / `MeterName`): one client span per call including its retries, and
-  `jev_net.client.request.duration`, `.retries` and `.token.usage`. Nothing you send is recorded, and there is
-  no cost when nobody is listening.
+  `jev_net.client.request.duration`, `.retries` and `.token.usage`. None of your content is recorded (the model
+  name and base-URL host you configured are), and there is no cost when nobody is listening.
 
 ## 0.3.0
 

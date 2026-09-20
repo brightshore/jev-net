@@ -207,9 +207,10 @@ requested and answering model, token counts and the `x-typesafe-request-id`.
 | `jev_net.client.retries` | Counter — attempts after the first. |
 | `jev_net.client.token.usage` | Counter — tagged `jev_net.token.type` = `input` \| `output`, and the answering model. |
 
-**Nothing you send is recorded** — no state, questions, answers or headers, and the URL is stripped of
-credentials and query. A failed span's description is a fixed `HTTP 429`, not the server's message, which could
-echo your request.
+**None of your content is recorded** — no state, questions, answers or headers. Two things you *configure*
+are: the model name you asked for (`jev_net.request.model`), and your base URL's host and path (`server.address`,
+`url.full` — never its credentials or query). A failed span's description is a fixed `HTTP 429`, not the
+server's message, which could echo your request.
 
 ## Python SDK → Jev.Net
 

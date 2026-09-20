@@ -16,7 +16,10 @@ namespace Jev.Net;
 /// <remarks>
 /// One span covers one SDK call INCLUDING its retries (<c>http.request.resend_count</c> says how many); the
 /// individual HTTP attempts appear beneath it from .NET's own <c>System.Net.Http</c> instrumentation, so they
-/// are not duplicated here. Nothing you send is ever recorded: no state, no questions, no answers, no headers.
+/// are not duplicated here.
+/// <para><b>None of your content is recorded</b> — no state, no questions, no answers, no headers. Two things you
+/// CONFIGURE are: the model name you asked for (<c>jev_net.request.model</c>) and the host and path of your
+/// base URL (<c>server.address</c>, <c>url.full</c>, without credentials or query). Keep secrets out of both.</para>
 /// </remarks>
 public static class TypeSafeTelemetry
 {
@@ -49,10 +52,13 @@ public static class TypeSafeTelemetry
 
     /// <summary>What one call measured, written to the span and the instruments together so they cannot disagree.</summary>
     internal static void Record(
-        Activity? activity, string operation, Uri url, string? requestedModel, TimeSpan elapsed, int attempts,
-        object? result, Exception? error)
+        Activity? activity, string operation, Uri url, string? requestedModel, TimeSpan elapsed, Internal.CallFacts call,
+        SystemOneResponse? response, Exception? error)
     {
-        var status = (error as TypeSafeApiException)?.Status ?? (error is null ? (result as TypeSafeResponse)?.StatusCode : null);
+        var attempts = Math.Max(call.Attempts, 1);
+        // From the wire, not from the decoded object: a caller's own response type (the JsonTypeInfo overloads)
+        // is an ordinary class with no HTTP metadata on it, and would otherwise report no status at all.
+        var status = (error as TypeSafeApiException)?.Status ?? call.Status;
         var errorType = error switch
         {
             null => null,
@@ -60,8 +66,6 @@ public static class TypeSafeTelemetry
             OperationCanceledException => "cancelled",
             _ => error.GetType().Name,
         };
-        var response = result as SystemOneResponse;
-
         var tags = new TagList
         {
             { "jev_net.operation", operation },
@@ -99,7 +103,7 @@ public static class TypeSafeTelemetry
             if (response.Usage.OutputTokens is { } output) activity.SetTag("jev_net.usage.output_tokens", output);
         }
 
-        var requestId = (error as TypeSafeApiException)?.RequestId ?? (result as TypeSafeResponse)?.RequestIdOrNull;
+        var requestId = (error as TypeSafeApiException)?.RequestId ?? call.RequestId;
         if (requestId is not null) activity.SetTag("jev_net.request_id", requestId);
 
         if (error is not null)

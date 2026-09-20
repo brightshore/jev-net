@@ -15,6 +15,18 @@ internal sealed record PreparedRequest(
     public string Endpoint => $"{Method.Method} {Url.GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped)}";
 }
 
+/// <summary>What the wire said about one SDK call, kept apart from the decoded result: a caller's own response
+/// type carries no HTTP metadata, and telemetry must not depend on which overload was used.</summary>
+internal sealed class CallFacts
+{
+    public int Attempts { get; set; }
+
+    /// <summary>Status of the LAST response received, if any attempt got one.</summary>
+    public int? Status { get; set; }
+
+    public string? RequestId { get; set; }
+}
+
 /// <summary>Shared HTTP request preparation, logging, retrying, and dispatch to response types.</summary>
 internal sealed class Transport(HttpClient http, Config config, RetryPolicy retry, SdkLog log, TypeSafeClientOptions options)
 {
@@ -95,12 +107,12 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         }
 
         var started = Stopwatch.GetTimestamp();
-        var attempts = new int[1];
+        var call = new CallFacts();
         T? result = null;
         Exception? failure = null;
         try
         {
-            return result = await SendCoreAsync(request, overridePolicy, decode, attempts, ct).ConfigureAwait(false);
+            return result = await SendCoreAsync(request, overridePolicy, decode, call, ct).ConfigureAwait(false);
         }
         catch (Exception error)
         {
@@ -110,12 +122,12 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
         finally
         {
             TypeSafeTelemetry.Record(activity, request.Operation, request.Url, request.Model, Stopwatch.GetElapsedTime(started),
-                Math.Max(attempts[0], 1), result, failure);
+                call, result as SystemOneResponse, failure);
         }
     }
 
     private async Task<T> SendCoreAsync<T>(
-        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, int[] attempts, CancellationToken ct) where T : class
+        PreparedRequest request, RetryPolicy? overridePolicy, Func<RawHttpResponse, T> decode, CallFacts call, CancellationToken ct) where T : class
     {
         var policy = overridePolicy ?? retry;
         var started = _clock.GetTimestamp();
@@ -123,11 +135,13 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
 
         while (true)
         {
-            attempts[0] = ++attempt;
+            call.Attempts = ++attempt;
             Exception failure;
             try
             {
                 var raw = await AttemptAsync(request, attempt, ct).ConfigureAwait(false);
+                call.Status = raw.StatusCode;
+                call.RequestId = raw.Headers.TryGetValue(Protocol.RequestIdHeader, out var id) ? id : null;
                 return ResponseDecoder.Parse(raw, decode, _clock);
             }
             catch (Exception error) when (error is not OperationCanceledException && policy.Retryable(error))
