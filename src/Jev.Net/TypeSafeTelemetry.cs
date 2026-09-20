@@ -14,9 +14,10 @@ namespace Jev.Net;
 /// </code>
 /// </summary>
 /// <remarks>
-/// One span covers one SDK call INCLUDING its retries (<c>http.request.resend_count</c> says how many); the
-/// individual HTTP attempts appear beneath it from .NET's own <c>System.Net.Http</c> instrumentation, so they
-/// are not duplicated here.
+/// One span covers one SDK call INCLUDING its retries (<c>http.request.resend_count</c> says how many). The
+/// individual HTTP attempts are not duplicated here: they come from .NET's own <c>System.Net.Http</c>
+/// instrumentation, and appear beneath this span only if you subscribe to that too
+/// (<c>AddHttpClientInstrumentation()</c>, or <c>AddSource("System.Net.Http")</c>).
 /// <para><b>None of your content is recorded</b> — no state, no questions, no answers, no headers. Two things you
 /// CONFIGURE are: the model name you asked for (<c>jev_net.request.model</c>) and the host and path of your
 /// base URL (<c>server.address</c>, <c>url.full</c>, without credentials or query). Keep secrets out of both.</para>

@@ -198,8 +198,10 @@ services.AddOpenTelemetry()
     .WithMetrics(metrics => metrics.AddMeter(TypeSafeTelemetry.MeterName));
 ```
 
-One client span covers one SDK call *including its retries* (`http.request.resend_count`); the individual HTTP
-attempts appear beneath it from .NET's own `System.Net.Http` instrumentation. It carries the operation, status,
+One client span covers one SDK call *including its retries* (`http.request.resend_count`). The individual HTTP
+attempts are not duplicated here: they come from .NET's own HTTP instrumentation, and appear beneath this span
+**only if you turn that on as well** — `.AddHttpClientInstrumentation()` from `OpenTelemetry.Instrumentation.Http`,
+or `.AddSource("System.Net.Http")`. The snippet above subscribes to Jev.Net alone. It carries the operation, status,
 requested and answering model, token counts and the `x-typesafe-request-id`.
 
 | Instrument | |
