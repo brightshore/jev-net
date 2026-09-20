@@ -34,9 +34,9 @@ jobs:
             8.0.x
             10.0.x
       - name: Build (warnings are errors; both target frameworks)
-        run: dotnet build Jev.Net.slnx --configuration Release -p:ContinuousIntegrationBuild=true
+        run: dotnet build Jev.Net.slnx --configuration Release -p:ContinuousIntegrationBuild=true -p:JevTestAllFrameworks=true
       # Offline by construction: the live tests need TYPESAFE_LIVE_TESTS=1 AND a key, and CI sets neither.
-      # CI=true makes the test project target net8.0 AND net10.0, so both shipped assemblies are exercised.
+      # The build above passed -p:JevTestAllFrameworks=true, so this runs the suite on net8.0 AND net10.0.
       - name: Test (net8.0 + net10.0)
         run: dotnet test --solution Jev.Net.slnx --configuration Release --no-build
       # IsAotCompatible only proves the analyzers are quiet. This publishes a real native binary and runs it:
@@ -51,6 +51,10 @@ jobs:
       - name: Pack (assembles the package, and diffs its public API against the last release)
         if: matrix.os == 'ubuntu-latest'
         run: dotnet pack src/Jev.Net/Jev.Net.csproj --configuration Release --no-build --output artifacts
+      - name: API baseline is the latest published version
+        if: matrix.os == 'ubuntu-latest'
+        run: scripts/check-baseline.sh
+
       - name: One dependency, as promised
         if: matrix.os == 'ubuntu-latest'
         run: scripts/check-dependencies.sh artifacts/*.nupkg

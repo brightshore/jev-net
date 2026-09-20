@@ -32,8 +32,11 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <!-- The API-break guard: `dotnet pack` diffs the public surface against the last published version and
          fails on a breaking change (and on net8.0/net10.0 disagreeing with each other). Built into the SDK, so
-         it costs no PackageReference. Move the baseline forward when a release ships; a deliberate break is
-         a suppression file plus a major/minor bump, never a silent one. -->
+         it costs no PackageReference. The baseline package is fetched from nuget.org on restore, then served
+         from the local package cache; to build or pack with no network and no cached copy, pass
+         -p:EnablePackageValidation=false. The baseline must be the LATEST PUBLISHED version, or changes made
+         since then go unchecked - scripts/check-baseline.sh enforces that in CI, so it cannot quietly decay.
+         A deliberate break is a suppression file plus a version bump, never a silent one. -->
     <EnablePackageValidation>true</EnablePackageValidation>
     <PackageValidationBaselineVersion>0.2.0</PackageValidationBaselineVersion>
     <IncludeSymbols>true</IncludeSymbols>
