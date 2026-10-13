@@ -1,0 +1,11 @@
+src/Jev.Net/Jev.Net.csproj
+  ai_agent 19
+src/Jev.Net/CHANGELOG.md
+  ai_agent 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5a7c3547e42ce71b81c64ff7ea87f49c9ce67e2e",
+  "prompts": {}
+}
