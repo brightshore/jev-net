@@ -27,7 +27,7 @@
     <PackageTags>typesafe;typesafe-ai;jev;system-one;ai;llm;classification;sdk</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
-    <PackageReleaseNotes>https://github.com/brightshore/jev-net/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>https://github.com/brightshore/jev-net/blob/main/src/Jev.Net/CHANGELOG.md</PackageReleaseNotes>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <!-- The API-break guard: `dotnet pack` diffs the public surface against the last published version and
