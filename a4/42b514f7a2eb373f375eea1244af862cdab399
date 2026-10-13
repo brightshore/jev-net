@@ -1,0 +1,46 @@
+tests/Jev.Net.Tests/ClientTests.cs
+  s_f42c67146eb8a0::t_543112c2006923 234
+src/Jev.Net/TypeSafeClientOptions.cs
+  s_f42c67146eb8a0::t_eba96b1751c748 123-141
+  s_f42c67146eb8a0::t_cd78a6c5b4f177 116
+  s_f42c67146eb8a0::t_02d470dfcb14df 12-14
+src/Jev.Net/TypeSafeClient.cs
+  s_f42c67146eb8a0::t_79eeb0265eca7b 34,92-93,149,170
+src/Jev.Net/Jev.Net.csproj
+  s_f42c67146eb8a0::t_27c03c189ac3d5 49
+.changeset/jolly-pandas-glow.md
+  s_f42c67146eb8a0::t_572ee0cebc60a6 1-6
+src/Jev.Net/JsonContent.cs
+  s_f42c67146eb8a0::t_e7a5c30298a5bb 176-179
+  s_f42c67146eb8a0::t_1a44c05ebe82a0 5,65-66,89-90,108,115,122-123,127,147-175,180-189
+tests/Jev.Net.Tests/ConfigTests.cs
+  s_f42c67146eb8a0::t_543112c2006923 76-113
+tests/Jev.Net.Tests/QuestionTests.cs
+  s_f42c67146eb8a0::t_8f5d4f1c2ef67d 144,149
+  s_f42c67146eb8a0::t_543112c2006923 81-143,145-148,150-169,245
+README.md
+  s_f42c67146eb8a0::t_27c03c189ac3d5 25,98-99,104-106,112-113
+src/Jev.Net/Internal/Transport.cs
+  s_f42c67146eb8a0::t_9103e4e52acc2f 114
+src/Jev.Net/Questions.cs
+  s_f42c67146eb8a0::t_f0dcef406e8f88 27-28,50-55,81-86,96-97,100,112-121,134-135,153,175-178,263-264,297-320,322
+  s_f42c67146eb8a0::t_1a44c05ebe82a0 281
+NOTICE
+  s_f42c67146eb8a0::t_27c03c189ac3d5 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a442b514f7a2eb373f375eea1244af862cdab399",
+  "prompts": {},
+  "sessions": {
+    "s_f42c67146eb8a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7df6fa67-0568-4a5f-ad2c-c5c0626d822d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "John Campion Jr <john@brightshore.io>"
+    }
+  }
+}
