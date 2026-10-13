@@ -31,7 +31,7 @@ public sealed class TypeSafeClient : ITypeSafeClient, IDisposable, IAsyncDisposa
     private bool _disposed;
 
     /// <summary>Create a client. The key comes from <paramref name="options"/> or <c>TYPESAFE_API_KEY</c>.</summary>
-    /// <exception cref="TypeSafeException">The API key is missing or the timeout is invalid.</exception>
+    /// <exception cref="TypeSafeException">The API key is missing or invalid, or the timeout is invalid.</exception>
     /// <exception cref="ArgumentException">Both a handler and an HttpClient were supplied.</exception>
     public TypeSafeClient(TypeSafeClientOptions? options = null)
     {
@@ -89,7 +89,8 @@ public sealed class TypeSafeClient : ITypeSafeClient, IDisposable, IAsyncDisposa
     /// <param name="questions">Nonempty mapping of names to questions. Names are yours: they key the answers.</param>
     /// <param name="options">Per-call overrides.</param>
     /// <param name="cancellationToken">Cancels the call, including a wait between retries.</param>
-    /// <exception cref="TypeSafeException">Questions are empty or a score question's criteria list is empty.</exception>
+    /// <exception cref="TypeSafeException">State is <see cref="JsonContent.Null"/>, questions are empty, a score or choice
+    /// question has no criteria, or a noul question has neither instructions nor criteria.</exception>
     /// <exception cref="TypeSafeApiException">The server returned an unsuccessful response after any retries.</exception>
     /// <exception cref="TypeSafeApiConnectionException">The request could not connect or timed out after any retries.</exception>
     /// <exception cref="TypeSafeApiResponseValidationException">The response body did not match the response type.</exception>
@@ -145,7 +146,7 @@ public sealed class TypeSafeClient : ITypeSafeClient, IDisposable, IAsyncDisposa
         ArgumentNullException.ThrowIfNull(state);
         if (state.IsNull)
         {
-            throw new TypeSafeException("State must be text, a JSON object, or a JSON array; got null.");
+            throw new TypeSafeException("State is required.");
         }
 
         Question.ValidateAll(questions);
@@ -166,7 +167,7 @@ public sealed class TypeSafeClient : ITypeSafeClient, IDisposable, IAsyncDisposa
         {
             foreach (var (key, value) in options.ExtraBody)
             {
-                body[key] = value?.DeepClone();
+                body[key] = Json.Clone(value);
             }
         }
 

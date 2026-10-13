@@ -24,7 +24,8 @@ public abstract class Question
     /// <summary>A raw question object, sent exactly as given.</summary>
     public static implicit operator Question(JsonObject raw) => new RawQuestion(raw);
 
-    /// <summary>Reject an empty question set, an empty score rubric, and structurally unusable raw questions.</summary>
+    /// <summary>Reject an empty question set, an empty score or choice, a noul that asks nothing, and structurally
+    /// unusable raw questions.</summary>
     internal static void ValidateAll(IReadOnlyDictionary<string, Question> questions)
     {
         if (questions is null || questions.Count == 0)
@@ -46,6 +47,12 @@ public abstract class Question
 
     private protected static void RejectEmptyScoreCriteria(string name) =>
         throw new TypeSafeException($"Score question \"{name}\" has no criteria; at least one score is required.");
+
+    private protected static void RejectEmptyChoiceCriteria(string name) =>
+        throw new TypeSafeException($"Choice question \"{name}\" has no criteria; at least one choice is required.");
+
+    private protected static void RejectUndescribedNoul(string name) =>
+        throw new TypeSafeException($"Noul question \"{name}\" has neither instructions nor criteria; at least one is required.");
 }
 
 /// <summary>Optional descriptions of a noul's yes and no outcomes.</summary>
@@ -71,8 +78,12 @@ public sealed class NoulCriteria
 public sealed class Noul : Question
 {
     /// <summary>Create a noul question.</summary>
-    /// <param name="instructions">The yes/no question or statement to evaluate; optional.</param>
-    /// <param name="criteria">Optional descriptions of the yes and no outcomes.</param>
+    /// <param name="instructions">The yes/no question or statement to evaluate; optional when
+    /// <paramref name="criteria"/> describes an outcome.</param>
+    /// <param name="criteria">Optional descriptions of the yes and no outcomes; required when
+    /// <paramref name="instructions"/> is null.</param>
+    /// <remarks>A noul must ask something: with no instructions, at least one outcome needs a non-null
+    /// description. That is checked when the question is sent, not here, so the properties can be set in any order.</remarks>
     public Noul(JsonContent? instructions = null, NoulCriteria? criteria = null)
     {
         Instructions = instructions;
@@ -82,10 +93,11 @@ public sealed class Noul : Question
     /// <inheritdoc />
     public override string Type => "noul";
 
-    /// <summary>The question to ask, as text, a JSON object, or an array; optional.</summary>
+    /// <summary>The question to ask, as text, a JSON object, or an array; optional when <see cref="Criteria"/>
+    /// describes an outcome.</summary>
     public JsonContent? Instructions { get; set; }
 
-    /// <summary>Optional descriptions of the yes and no outcomes.</summary>
+    /// <summary>Optional descriptions of the yes and no outcomes; required when <see cref="Instructions"/> is null.</summary>
     public NoulCriteria? Criteria { get; set; }
 
     /// <inheritdoc />
@@ -97,7 +109,16 @@ public sealed class Noul : Question
         return json;
     }
 
-    internal override void Validate(string name) { }
+    internal override void Validate(string name)
+    {
+        // An explicit JsonContent.Null is None upstream, the same as leaving the field unset.
+        static bool Described(JsonContent? content) => content is { IsNull: false };
+
+        if (!Described(Instructions) && !(Described(Criteria?.True) || Described(Criteria?.False)))
+        {
+            RejectUndescribedNoul(name);
+        }
+    }
 }
 
 /// <summary>A question that selects between named alternatives.</summary>
@@ -110,8 +131,8 @@ public sealed class Choice : Question
     private IReadOnlyDictionary<string, JsonContent?> _criteria;
 
     /// <summary>Create a choice question.</summary>
-    /// <param name="criteria">Labels mapped to descriptions; a <c>null</c> description leaves the label to be
-    /// interpreted by its name alone.</param>
+    /// <param name="criteria">A nonempty mapping of labels to descriptions; a <c>null</c> description leaves the
+    /// label to be interpreted by its name alone.</param>
     /// <param name="instructions">The question to ask; optional.</param>
     public Choice(IReadOnlyDictionary<string, JsonContent?> criteria, JsonContent? instructions = null)
     {
@@ -129,7 +150,7 @@ public sealed class Choice : Question
     /// <summary>The question to ask, as text, a JSON object, or an array; optional.</summary>
     public JsonContent? Instructions { get; set; }
 
-    /// <summary>Labels mapped to text, object, or array descriptions, or null for undescribed labels.</summary>
+    /// <summary>A nonempty mapping of labels to text, object, or array descriptions, or null for undescribed labels.</summary>
     public IReadOnlyDictionary<string, JsonContent?> Criteria
     {
         get => _criteria;
@@ -151,7 +172,10 @@ public sealed class Choice : Question
         return json;
     }
 
-    internal override void Validate(string name) { }
+    internal override void Validate(string name)
+    {
+        if (_criteria.Count == 0) RejectEmptyChoiceCriteria(name);
+    }
 
     private static Dictionary<string, JsonContent?> ToCriteria(IEnumerable<string> labels)
     {
@@ -236,7 +260,8 @@ public sealed class Score : Question
 
 /// <summary>
 /// A question object sent exactly as given — the escape hatch for fields or question types the API adds
-/// before this SDK models them. Only its structure is checked; its schema is left to the API.
+/// before this SDK models them. Only its structure is checked, as upstream checks a raw dictionary; its schema is
+/// left to the API.
 /// </summary>
 public sealed class RawQuestion : Question
 {
@@ -253,7 +278,7 @@ public sealed class RawQuestion : Question
     public JsonObject Raw => _raw;
 
     /// <inheritdoc />
-    public override JsonObject ToJson() => (JsonObject)_raw.DeepClone();
+    public override JsonObject ToJson() => (JsonObject)Json.Clone(_raw)!;
 
     internal override void Validate(string name)
     {
@@ -269,9 +294,32 @@ public sealed class RawQuestion : Question
             throw new TypeSafeException($"Question \"{name}\" requires \"criteria\".");
         }
 
-        if (type == "score" && IsEmpty(_raw["criteria"]))
+        switch (type)
         {
-            RejectEmptyScoreCriteria(name);
+            case "score" when IsEmpty(_raw["criteria"]):
+                RejectEmptyScoreCriteria(name);
+                break;
+            case "choice" when IsEmpty(_raw["criteria"]):
+                RejectEmptyChoiceCriteria(name);
+                break;
+            case "noul":
+                ValidateNoul(name);
+                break;
+        }
+    }
+
+    // A missing key and an explicit null read the same, as None does upstream.
+    private void ValidateNoul(string name)
+    {
+        var criteria = _raw["criteria"];
+        if (criteria is not null and not JsonObject)
+        {
+            throw new TypeSafeException($"Noul question \"{name}\" criteria must be an object.");
+        }
+
+        if (_raw["instructions"] is null && !(criteria is JsonObject outcomes && outcomes.Any(o => o.Value is not null)))
+        {
+            RejectUndescribedNoul(name);
         }
     }
 
