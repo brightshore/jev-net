@@ -171,6 +171,10 @@ public sealed class QuestionTests
         FluentActions.Invoking(() => JsonContent.From(double.PositiveInfinity)).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
         FluentActions.Invoking(() => JsonContent.From<object>(float.NaN)).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
         FluentActions.Invoking(() => JsonContent.From<double?>(double.NaN)).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => JsonContent.From<JsonNode>(JsonValue.Create(double.NaN))).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => JsonContent.From<object>(JsonValue.Create(float.PositiveInfinity))).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => JsonContent.From<JsonNode>(JsonValue.Create(double.NaN),
+            (System.Text.Json.Serialization.Metadata.JsonTypeInfo<JsonNode>)System.Text.Json.JsonSerializerOptions.Default.GetTypeInfo(typeof(JsonNode)))).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
 
         ((JsonContent)"NaN").ToNode()!.GetValue<string>().Should().Be("NaN", "text that happens to read NaN is still text");
     }

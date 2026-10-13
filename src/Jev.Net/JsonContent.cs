@@ -57,6 +57,7 @@ public sealed class JsonContent
     [RequiresDynamicCode(TypeSafeClient.ReflectionJson)]
     public static JsonContent From<T>(T value, JsonSerializerOptions? options = null)
     {
+        if (value is JsonNode node) return FromNode(node);
         RejectBareNonFinite(value);
         JsonNode? node;
         try
@@ -82,6 +83,7 @@ public sealed class JsonContent
     public static JsonContent From<T>(T value, JsonTypeInfo<T> typeInfo)
     {
         ArgumentNullException.ThrowIfNull(typeInfo);
+        if (value is JsonNode node) return FromNode(node);
         RejectBareNonFinite(value);
         JsonNode? node;
         try
@@ -119,7 +121,8 @@ public sealed class JsonContent
     }
 
     // A serializer that allows named floating-point literals writes a bare NaN as the STRING "NaN", so by the time
-    // FromNode sees it, it is indistinguishable from text. A bare number is never content; refuse it here.
+    // FromNode sees it, it is indistinguishable from text. A bare number is never content; refuse it here. (A node
+    // never reaches the serializer: the From overloads hand one straight to FromNode, which sees its real kind.)
     private static void RejectBareNonFinite<T>(T value)
     {
         if (value is double d && !double.IsFinite(d) || value is float f && !float.IsFinite(f))
