@@ -1,0 +1,21 @@
+CHANGELOG.md
+  s_f42c67146eb8a0::t_0fa4b29b88e18c 3-16
+src/Jev.Net/Jev.Net.csproj
+  ai_agent 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f62d05a8382e8d446573c31fa75899495b0bd148",
+  "prompts": {},
+  "sessions": {
+    "s_f42c67146eb8a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7df6fa67-0568-4a5f-ad2c-c5c0626d822d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "John Campion Jr <john@brightshore.io>"
+    }
+  }
+}
