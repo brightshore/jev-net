@@ -1,0 +1,23 @@
+src/Jev.Net/JsonContent.cs
+  s_f42c67146eb8a0::t_d6244d8266f328 60,85,110-112,118-128,189-190,196-204
+tests/Jev.Net.Tests/QuestionTests.cs
+  s_f42c67146eb8a0::t_d6244d8266f328 164-177
+README.md
+  s_f42c67146eb8a0::t_d6244d8266f328 106,112-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "87db5fcaf052086aa04e10b9b580b94d8fd69739",
+  "prompts": {},
+  "sessions": {
+    "s_f42c67146eb8a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7df6fa67-0568-4a5f-ad2c-c5c0626d822d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "John Campion Jr <john@brightshore.io>"
+    }
+  }
+}
