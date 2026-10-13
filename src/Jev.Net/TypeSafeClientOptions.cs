@@ -9,7 +9,9 @@ namespace Jev.Net;
 /// </summary>
 public sealed class TypeSafeClientOptions
 {
-    /// <summary>Required API key; falls back to the <c>TYPESAFE_API_KEY</c> environment variable.</summary>
+    /// <summary>Required API key; falls back to the <c>TYPESAFE_API_KEY</c> environment variable. Leading and
+    /// trailing whitespace is stripped; an empty key, internal whitespace, control characters and non-ASCII
+    /// characters are rejected.</summary>
     public string? ApiKey { get; init; }
 
     /// <summary>Default model; falls back to <c>TYPESAFE_DEFAULT_MODEL</c>, then <c>jev-latest</c>.</summary>
@@ -110,16 +112,31 @@ internal sealed record Config(
             return string.IsNullOrEmpty(read) ? fallback : read;
         }
 
-        var key = FromEnv(options.ApiKey, TypeSafeDefaults.ApiKeyEnv)
-            ?? throw new TypeSafeException(
-                $"No API key was provided. Pass ApiKey or set the {TypeSafeDefaults.ApiKeyEnv} environment variable.");
-
         return new Config(
-            key,
+            ResolveApiKey(FromEnv(options.ApiKey, TypeSafeDefaults.ApiKeyEnv)),
             FromEnv(options.BaseUrl, TypeSafeDefaults.BaseUrlEnv, TypeSafeDefaults.BaseUrl)!.TrimEnd('/'),
             FromEnv(options.Model, TypeSafeDefaults.DefaultModelEnv, TypeSafeDefaults.Model)!,
             Timeouts.Checked(options.Timeout ?? inheritedTimeout ?? TypeSafeDefaults.Timeout),
             options.Headers ?? new Dictionary<string, string>());
+    }
+
+    /// <summary>Strip the key, then require it to be nonempty printable ASCII with no whitespace — as upstream.</summary>
+    private static string ResolveApiKey(string? value)
+    {
+        var key = value?.Trim();
+        if (string.IsNullOrEmpty(key))
+        {
+            throw new TypeSafeException(
+                $"No API key was provided. Pass ApiKey or set the {TypeSafeDefaults.ApiKeyEnv} environment variable.");
+        }
+
+        // Printable ASCII without the space is exactly '!' through '~'.
+        if (key.Any(c => c is < '!' or > '~'))
+        {
+            throw new TypeSafeException("API key must contain only printable ASCII characters without whitespace.");
+        }
+
+        return key;
     }
 
     // The key must never reach a log line or a debugger tooltip through the record's generated ToString.

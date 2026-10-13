@@ -73,6 +73,45 @@ public sealed class ConfigTests
     }
 
     [TestMethod]
+    [DataRow("")]
+    [DataRow(" \t\n ")]
+    public void An_Empty_Explicit_Key_Is_Missing(string key) =>
+        FluentActions.Invoking(() => Clients.Create(new StubHandler(_ => Http.Json(200, "{}")), apiKey: key))
+            .Should().Throw<TypeSafeException>()
+            .WithMessage("No API key was provided. Pass ApiKey or set the TYPESAFE_API_KEY environment variable.");
+
+    [TestMethod]
+    [DataRow("sk test")]
+    [DataRow("sk\ttest")]
+    [DataRow("sk\ntest")]
+    [DataRow("sk\u007ftest")]
+    [DataRow("sk\u0000test")]
+    [DataRow("sk-tést")]
+    [DataRow("sk\u00a0test")]
+    public void A_Key_With_Whitespace_Control_Or_Non_Ascii_Characters_Is_Rejected(string key)
+    {
+        var message = "API key must contain only printable ASCII characters without whitespace.";
+        FluentActions.Invoking(() => Clients.Create(new StubHandler(_ => Http.Json(200, "{}")), apiKey: key))
+            .Should().Throw<TypeSafeException>().WithMessage(message);
+        FluentActions.Invoking(() => Clients.Create(new StubHandler(_ => Http.Json(200, "{}")), apiKey: null,
+                env: Env((TypeSafeDefaults.ApiKeyEnv, key))))
+            .Should().Throw<TypeSafeException>().WithMessage(message);
+    }
+
+    [TestMethod]
+    public async Task An_Explicit_Key_Is_Stripped()
+    {
+        var handler = new StubHandler(request =>
+        {
+            request.Header("authorization").Should().Be("Bearer code-key");
+            return Http.Json(200, ClientTests.Result);
+        });
+        using var client = Clients.Create(handler, apiKey: " \t code-key \n ");
+        await client.SystemOneAsync("hello", Clients.OneQuestion);
+        handler.Requests.Should().HaveCount(1);
+    }
+
+    [TestMethod]
     public async Task Blank_Environment_Values_Count_As_Unset()
     {
         var handler = new StubHandler(request =>

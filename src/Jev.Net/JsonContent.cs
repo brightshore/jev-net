@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Jev.Net;
@@ -61,7 +62,8 @@ public sealed class JsonContent
         {
             node = JsonSerializer.SerializeToNode(value, options ?? Json.Relaxed);
         }
-        catch (Exception error) when (error is NotSupportedException or JsonException or InvalidOperationException)
+        // ArgumentException: a NaN or infinity under options that do not allow named floating-point literals.
+        catch (Exception error) when (error is NotSupportedException or JsonException or InvalidOperationException or ArgumentException)
         {
             throw new TypeSafeException("The request body could not be encoded as JSON", error);
         }
@@ -84,7 +86,8 @@ public sealed class JsonContent
         {
             node = JsonSerializer.SerializeToNode(value, typeInfo);
         }
-        catch (Exception error) when (error is NotSupportedException or JsonException or InvalidOperationException)
+        // ArgumentException: a NaN or infinity under options that do not allow named floating-point literals.
+        catch (Exception error) when (error is NotSupportedException or JsonException or InvalidOperationException or ArgumentException)
         {
             throw new TypeSafeException("The request body could not be encoded as JSON", error);
         }
@@ -102,23 +105,26 @@ public sealed class JsonContent
 
     private static JsonContent FromNode(JsonNode node)
     {
+        node = Json.Clone(node)!;
         var kind = node.GetValueKind();
         if (kind is not (JsonValueKind.String or JsonValueKind.Object or JsonValueKind.Array))
         {
             throw new TypeSafeException($"Content must be text, a JSON object, or a JSON array; got {kind}.");
         }
 
-        return new JsonContent(node.DeepClone());
+        return new JsonContent(node);
     }
 }
 
 /// <summary>Shared serializer settings.</summary>
 internal static class Json
 {
-    /// <summary>Compact output that leaves non-ASCII text (and quotes inside strings) readable.</summary>
+    /// <summary>Compact output that leaves non-ASCII text (and quotes inside strings) readable, with NaN and the
+    /// infinities written as the strings upstream sends.</summary>
     public static readonly JsonSerializerOptions Relaxed = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
     };
 
     private static readonly JsonWriterOptions Writer = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -137,6 +143,50 @@ internal static class Json
     }
 
     public static string Write(JsonNode node) => System.Text.Encoding.UTF8.GetString(WriteBytes(node));
+
+    /// <summary>
+    /// A deep copy in which every NaN or infinite <see cref="double"/> or <see cref="float"/> becomes the string
+    /// <c>"NaN"</c>, <c>"Infinity"</c> or <c>"-Infinity"</c>, as upstream encodes them: JSON has no token for
+    /// these, and a writer refuses them outright.
+    /// </summary>
+    /// <remarks>Walks the tree itself rather than calling <see cref="JsonNode.DeepClone"/>, which may serialize a
+    /// value on the way and would throw on exactly the values being replaced.</remarks>
+    public static JsonNode? Clone(JsonNode? node)
+    {
+        switch (node)
+        {
+            case null:
+                return null;
+            case JsonObject obj:
+                var copy = new JsonObject(obj.Options);
+                foreach (var (name, value) in obj)
+                {
+                    copy[name] = Clone(value);
+                }
+
+                return copy;
+            case JsonArray array:
+                var items = new JsonArray(array.Options);
+                foreach (var item in array)
+                {
+                    items.Add(Clone(item));
+                }
+
+                return items;
+            // Parsed from JSON text, so it cannot hold a NaN — and asking it for a float could read an
+            // out-of-range number such as 1e39 as an infinity.
+            case JsonValue value when value.TryGetValue<JsonElement>(out _):
+                return node.DeepClone();
+            case JsonValue value when value.TryGetValue<double>(out var d) && !double.IsFinite(d):
+                return JsonValue.Create(Named(d));
+            case JsonValue value when value.TryGetValue<float>(out var f) && !float.IsFinite(f):
+                return JsonValue.Create(Named(f));
+            default:
+                return node.DeepClone();
+        }
+    }
+
+    private static string Named(double value) => double.IsNaN(value) ? "NaN" : value > 0 ? "Infinity" : "-Infinity";
 
     /// <summary>Lenient response decoding: empty → null, JSON → a node, anything else → the text itself.</summary>
     public static JsonNode? Deserialize(ReadOnlySpan<byte> content)

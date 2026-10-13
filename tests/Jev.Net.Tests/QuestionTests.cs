@@ -78,6 +78,96 @@ public sealed class QuestionTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void Empty_Choice_Criteria_Is_Rejected(bool raw)
+    {
+        Question question = raw ? Raw("""{"type": "choice", "instructions": "Tone?", "criteria": {}}""") : new Choice(Array.Empty<string>(), "Tone?");
+        FluentActions.Invoking(() => Question.ValidateAll(new Dictionary<string, Question> { ["tone"] = question }))
+            .Should().Throw<TypeSafeException>()
+            .WithMessage("Choice question \"tone\" has no criteria; at least one choice is required.");
+    }
+
+    public static IEnumerable<object[]> UndescribedNouls() =>
+    [
+        [new Noul()],
+        [new Noul(criteria: new NoulCriteria())],
+        [new Noul(JsonContent.Null, new NoulCriteria { True = JsonContent.Null, False = JsonContent.Null })],
+        [(Question)Raw("""{"type": "noul"}""")],
+        [(Question)Raw("""{"type": "noul", "instructions": null, "criteria": null}""")],
+        [(Question)Raw("""{"type": "noul", "criteria": {}}""")],
+        [(Question)Raw("""{"type": "noul", "criteria": {"true": null, "false": null}}""")],
+    ];
+
+    [TestMethod]
+    [DynamicData(nameof(UndescribedNouls))]
+    public void A_Noul_Needs_Instructions_Or_A_Described_Outcome(Question question)
+    {
+        FluentActions.Invoking(() => Question.ValidateAll(new Dictionary<string, Question> { ["spam"] = question }))
+            .Should().Throw<TypeSafeException>()
+            .WithMessage("Noul question \"spam\" has neither instructions nor criteria; at least one is required.");
+    }
+
+    public static IEnumerable<object[]> DescribedNouls() =>
+    [
+        [new Noul("Spam?")],
+        [new Noul("")],
+        [new Noul(criteria: new NoulCriteria { True = "Unsolicited" })],
+        [new Noul(criteria: new NoulCriteria { True = JsonContent.Null, False = "Expected mail" })],
+        [(Question)Raw("""{"type": "noul", "instructions": "Spam?", "criteria": null}""")],
+        [(Question)Raw("""{"type": "noul", "criteria": {"false": "Expected mail"}}""")],
+        [(Question)Raw("""{"type": "noul", "criteria": {"future": "kept"}}""")],
+    ];
+
+    [TestMethod]
+    [DynamicData(nameof(DescribedNouls))]
+    public void A_Noul_With_Instructions_Or_One_Described_Outcome_Is_Accepted(Question question) =>
+        FluentActions.Invoking(() => Question.ValidateAll(new Dictionary<string, Question> { ["spam"] = question }))
+            .Should().NotThrow();
+
+    [TestMethod]
+    [DataRow("\"Yes\"")]
+    [DataRow("[\"Yes\"]")]
+    [DataRow("1")]
+    [DataRow("false")]
+    public void A_Raw_Noul_Criteria_Must_Be_An_Object(string criteria)
+    {
+        var question = Raw("""{"type": "noul", "instructions": "Spam?", "criteria": <<0>>}""".With(0, criteria));
+        FluentActions.Invoking(() => Question.ValidateAll(new Dictionary<string, Question> { ["spam"] = question }))
+            .Should().Throw<TypeSafeException>().WithMessage("Noul question \"spam\" criteria must be an object.");
+    }
+
+    [TestMethod]
+    public async Task NaN_And_The_Infinities_Are_Sent_As_Strings()
+    {
+        // JSON has no token for them; upstream sends the names, and .NET's writer would otherwise throw.
+        const string expected = """{"nan": "NaN", "up": "Infinity", "down": "-Infinity", "single": "NaN", "items": ["Infinity", 1.5], "big": 1e39}""";
+        var node = new JsonObject
+        {
+            ["nan"] = double.NaN, ["up"] = double.PositiveInfinity, ["down"] = double.NegativeInfinity,
+            ["single"] = float.NaN, ["items"] = new JsonArray(float.PositiveInfinity, 1.5),
+            ["big"] = JsonNode.Parse("1e39"), // parsed, and too big for a float: stays a number
+        };
+
+        var body = await Sent(node, new Dictionary<string, Question>
+        {
+            ["raw"] = new JsonObject { ["type"] = "score", ["criteria"] = new JsonArray("low"), ["weight"] = double.NaN },
+        });
+
+        JsonAssert.Equal(body["state"], expected);
+        JsonAssert.Equal(body["questions"]!["raw"]!["weight"], "\"NaN\"");
+        JsonAssert.Equal(JsonContent.From(new { nan = double.NaN, up = double.PositiveInfinity, down = double.NegativeInfinity }).ToNode(),
+            """{"nan": "NaN", "up": "Infinity", "down": "-Infinity"}""");
+    }
+
+    [TestMethod]
+    public void A_NaN_That_Caller_Options_Forbid_Is_An_Sdk_Error()
+    {
+        FluentActions.Invoking(() => JsonContent.From(new { x = double.NaN }, new System.Text.Json.JsonSerializerOptions()))
+            .Should().Throw<TypeSafeException>().WithMessage("*could not be encoded as JSON*");
+    }
+
+    [TestMethod]
     public void Typed_Questions_Reject_Bad_Shapes_At_Construction()
     {
         FluentActions.Invoking(() => new Choice((IReadOnlyDictionary<string, JsonContent?>)null!)).Should().Throw<ArgumentNullException>();
@@ -152,7 +242,7 @@ public sealed class QuestionTests
     public async Task Raw_Optional_Fields_Preserve_An_Explicit_Null()
     {
         const string questions = """
-            {"yes": {"type": "noul", "instructions": null, "criteria": null},
+            {"yes": {"type": "noul", "instructions": null, "criteria": {"true": "Yes", "false": null}},
              "label": {"type": "choice", "instructions": null, "criteria": {"a": null}},
              "rating": {"type": "score", "instructions": null, "criteria": ["good"]}}
             """;

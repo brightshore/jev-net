@@ -231,7 +231,7 @@ public sealed class ClientTests
         (await client.Invoking(c => c.SystemOneAsync("x", new Dictionary<string, Question> { ["rating"] = new Score(Array.Empty<string>(), "?") }))
             .Should().ThrowAsync<TypeSafeException>()).WithMessage("*\"rating\" has no criteria*");
         (await client.Invoking(c => c.SystemOneAsync(JsonContent.Null, Clients.OneQuestion))
-            .Should().ThrowAsync<TypeSafeException>()).WithMessage("*State must be*");
+            .Should().ThrowAsync<TypeSafeException>()).WithMessage("State is required.");
         handler.Requests.Should().BeEmpty();
     }
 

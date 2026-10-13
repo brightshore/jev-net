@@ -111,7 +111,7 @@ internal sealed class Transport(HttpClient http, Config config, RetryPolicy retr
             {
                 content = Json.WriteBytes(body);
             }
-            catch (Exception error) when (error is NotSupportedException or InvalidOperationException)
+            catch (Exception error) when (error is NotSupportedException or InvalidOperationException or ArgumentException)
             {
                 throw new TypeSafeException("The request body could not be encoded as JSON", error);
             }

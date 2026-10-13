@@ -22,7 +22,7 @@ CI reads the packed `.nuspec` and fails on a second dependency. Targets `net8.0`
 **trim- and Native AOT-compatible** — a smoke app is published as a native binary and run on every build.
 
 **The Python SDK, in C#.** It is a faithful port of the official
-[`typesafe-sdk`](https://github.com/typesafe-ai/typesafe-sdk-python) (read at 0.7.0): the same request shape,
+[`typesafe-sdk`](https://github.com/typesafe-ai/typesafe-sdk-python) (read at 0.7.4): the same request shape,
 the same protected headers, the same exception hierarchy and the same **message text**, the same retry rules,
 the same dotted field paths when a response is malformed. Its test suite is a mirror of upstream's, file by
 file — so behaviour you read about in TypeSafe's docs, or debugged once in Python, is the behaviour you get
@@ -95,19 +95,22 @@ and out, so one `JsonObject` can appear in several questions and a question can 
 `System.Text.Json` nodes have a single parent, and encoding by reference would throw on the second use.
 
 `null` means *omit* for an optional field; `JsonContent.Null` means *send an explicit null*. A choice label
-mapped to `null` is sent as `null` (undescribed — interpreted by its name).
+mapped to `null` is sent as `null` (undescribed — interpreted by its name). A NaN or infinite number anywhere in
+content is sent as the string `"NaN"`, `"Infinity"` or `"-Infinity"`, as upstream sends it — JSON has no token for them.
 
 **Limits.** The API documents at most 255 choice options and 2–10 score levels. Jev.Net, like the Python SDK,
 does not enforce these client-side — an out-of-range question comes back as a
 `TypeSafeUnprocessableEntityException` naming the field. What IS rejected before the network is structural, not
-schema: a null or missing state, an empty question set, a null question, an empty score rubric, and a raw
-question without a `type` (or a raw `choice`/`score` without `criteria`).
+schema: a null or missing state, an empty question set, a null question, an empty score rubric or choice, a noul
+with neither instructions nor a described outcome, and a raw question without a `type` (or a raw `choice`/`score`
+without `criteria`, or a raw `noul` whose `criteria` is not an object).
 
 ## Raw questions
 
 A `JsonObject` converts implicitly to a `Question` and is sent exactly as given — the escape hatch for fields or
 question types the API adds before this SDK models them. Only its structure is checked (`type` present; `choice`
-and `score` have `criteria`; a score rubric is nonempty); its schema is left to the API.
+and `score` have nonempty `criteria`; a `noul` has object `criteria`, if any, and instructions or a described
+outcome); its schema is left to the API.
 
 ## Dependency injection
 
