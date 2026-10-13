@@ -57,7 +57,7 @@ public sealed class JsonContent
     [RequiresDynamicCode(TypeSafeClient.ReflectionJson)]
     public static JsonContent From<T>(T value, JsonSerializerOptions? options = null)
     {
-        if (value is JsonNode node) return FromNode(node);
+        if (value is JsonNode given) return FromNode(given);
         RejectBareNonFinite(value);
         JsonNode? node;
         try
@@ -83,7 +83,7 @@ public sealed class JsonContent
     public static JsonContent From<T>(T value, JsonTypeInfo<T> typeInfo)
     {
         ArgumentNullException.ThrowIfNull(typeInfo);
-        if (value is JsonNode node) return FromNode(node);
+        if (value is JsonNode given) return FromNode(given);
         RejectBareNonFinite(value);
         JsonNode? node;
         try
