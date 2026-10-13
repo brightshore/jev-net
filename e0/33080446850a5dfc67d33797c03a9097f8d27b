@@ -1,0 +1,9 @@
+src/Jev.Net/JsonContent.cs
+  ai_agent 60,86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e033080446850a5dfc67d33797c03a9097f8d27b",
+  "prompts": {}
+}
