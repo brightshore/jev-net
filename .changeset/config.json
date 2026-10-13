@@ -2,6 +2,7 @@
   "$schema": "https://rigsmith.dev/schemas/changeset-config.json",
   "baseBranch": "main",
   "access": "public",
+  "tagTemplate": "${name}@${version}",
   "updateInternalDependencies": "patch",
   "ignore": [
     "Jev.Net.Tests"

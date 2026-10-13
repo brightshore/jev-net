@@ -5,9 +5,9 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore: ['CHANGELOG.md', 'SECURITY.md', '.changeset/**', 'LICENSE', 'NOTICE']
+    paths-ignore: ['src/Jev.Net/CHANGELOG.md', 'SECURITY.md', '.changeset/**', 'LICENSE', 'NOTICE']
   pull_request:
-    paths-ignore: ['CHANGELOG.md', 'SECURITY.md', '.changeset/**', 'LICENSE', 'NOTICE']
+    paths-ignore: ['src/Jev.Net/CHANGELOG.md', 'SECURITY.md', '.changeset/**', 'LICENSE', 'NOTICE']
   workflow_dispatch:
 
 concurrency:
