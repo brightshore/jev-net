@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+**Caught up with the Python SDK, `typesafe-sdk` 0.7.4.** Each of these is checked before anything reaches the
+network, with upstream's message text:
+
+- **Changed:** the API key is stripped of surrounding whitespace, and an empty key, internal whitespace, control
+  characters and non-ASCII characters are rejected (an explicit `ApiKey = ""` used to be sent as-is).
+- **Changed:** a choice with no labels is rejected, as is a noul with neither instructions nor a described outcome,
+  typed or raw; a raw noul's `criteria`, when present and not null, must be an object.
+- **Changed:** a `JsonContent.Null` state now reads "State is required.", upstream's wording.
+- NaN and the infinities in content are sent as the strings `"NaN"`, `"Infinity"` and `"-Infinity"`, as upstream
+  sends them. They used to escape as a bare `ArgumentException`. A bare NaN or infinity is still a number, not
+  content, and is rejected as one.
+
 ## 0.4.0
 
 - **Traces and metrics, with no new dependency.** An `ActivitySource` and a `Meter`, both named `Jev.Net`
