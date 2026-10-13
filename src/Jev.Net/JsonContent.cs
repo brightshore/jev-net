@@ -57,6 +57,7 @@ public sealed class JsonContent
     [RequiresDynamicCode(TypeSafeClient.ReflectionJson)]
     public static JsonContent From<T>(T value, JsonSerializerOptions? options = null)
     {
+        RejectBareNonFinite(value);
         JsonNode? node;
         try
         {
@@ -81,6 +82,7 @@ public sealed class JsonContent
     public static JsonContent From<T>(T value, JsonTypeInfo<T> typeInfo)
     {
         ArgumentNullException.ThrowIfNull(typeInfo);
+        RejectBareNonFinite(value);
         JsonNode? node;
         try
         {
@@ -105,14 +107,25 @@ public sealed class JsonContent
 
     private static JsonContent FromNode(JsonNode node)
     {
-        node = Json.Clone(node)!;
-        var kind = node.GetValueKind();
+        // The kind is read before cloning: a clone turns a bare NaN into the string "NaN", which would pass as text.
+        // Nor is GetValueKind asked about one — it may serialize the value to answer, and that throws.
+        var kind = node is JsonValue value && Json.NonFiniteName(value) is not null ? JsonValueKind.Number : node.GetValueKind();
         if (kind is not (JsonValueKind.String or JsonValueKind.Object or JsonValueKind.Array))
         {
             throw new TypeSafeException($"Content must be text, a JSON object, or a JSON array; got {kind}.");
         }
 
-        return new JsonContent(node);
+        return new JsonContent(Json.Clone(node));
+    }
+
+    // A serializer that allows named floating-point literals writes a bare NaN as the STRING "NaN", so by the time
+    // FromNode sees it, it is indistinguishable from text. A bare number is never content; refuse it here.
+    private static void RejectBareNonFinite<T>(T value)
+    {
+        if (value is double d && !double.IsFinite(d) || value is float f && !float.IsFinite(f))
+        {
+            throw new TypeSafeException($"Content must be text, a JSON object, or a JSON array; got {JsonValueKind.Number}.");
+        }
     }
 }
 
@@ -173,17 +186,22 @@ internal static class Json
                 }
 
                 return items;
-            // Parsed from JSON text, so it cannot hold a NaN — and asking it for a float could read an
-            // out-of-range number such as 1e39 as an infinity.
-            case JsonValue value when value.TryGetValue<JsonElement>(out _):
-                return node.DeepClone();
-            case JsonValue value when value.TryGetValue<double>(out var d) && !double.IsFinite(d):
-                return JsonValue.Create(Named(d));
-            case JsonValue value when value.TryGetValue<float>(out var f) && !float.IsFinite(f):
-                return JsonValue.Create(Named(f));
+            case JsonValue value when NonFiniteName(value) is { } name:
+                return JsonValue.Create(name);
             default:
                 return node.DeepClone();
         }
+    }
+
+    /// <summary><c>"NaN"</c>, <c>"Infinity"</c> or <c>"-Infinity"</c> when the value holds one; otherwise null.</summary>
+    public static string? NonFiniteName(JsonValue value)
+    {
+        // Parsed from JSON text, so it cannot hold a NaN — and asking it for a float could read an out-of-range
+        // number such as 1e39 as an infinity.
+        if (value.TryGetValue<JsonElement>(out _)) return null;
+        if (value.TryGetValue<double>(out var d) && !double.IsFinite(d)) return Named(d);
+        if (value.TryGetValue<float>(out var f) && !float.IsFinite(f)) return Named(f);
+        return null;
     }
 
     private static string Named(double value) => double.IsNaN(value) ? "NaN" : value > 0 ? "Infinity" : "-Infinity";

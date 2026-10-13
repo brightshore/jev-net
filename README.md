@@ -103,14 +103,14 @@ does not enforce these client-side — an out-of-range question comes back as a
 `TypeSafeUnprocessableEntityException` naming the field. What IS rejected before the network is structural, not
 schema: a null or missing state, an empty question set, a null question, an empty score rubric or choice, a noul
 with neither instructions nor a described outcome, and a raw question without a `type` (or a raw `choice`/`score`
-without `criteria`, or a raw `noul` whose `criteria` is not an object).
+without nonempty `criteria`, or a raw `noul` whose `criteria` is present, not null, and not an object).
 
 ## Raw questions
 
 A `JsonObject` converts implicitly to a `Question` and is sent exactly as given — the escape hatch for fields or
 question types the API adds before this SDK models them. Only its structure is checked (`type` present; `choice`
-and `score` have nonempty `criteria`; a `noul` has object `criteria`, if any, and instructions or a described
-outcome); its schema is left to the API.
+and `score` have nonempty `criteria`; a `noul`'s `criteria`, unless missing or null, is an object, and it has
+instructions or a described outcome); its schema is left to the API.
 
 ## Dependency injection
 

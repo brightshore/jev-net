@@ -161,6 +161,21 @@ public sealed class QuestionTests
     }
 
     [TestMethod]
+    public void A_Bare_NaN_Or_Infinity_Is_A_Number_Not_Text()
+    {
+        // Encoding one as a string must not smuggle a bare number past the text/object/array rule.
+        FluentActions.Invoking(() => { JsonContent _ = JsonValue.Create(double.NaN); })
+            .Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => { JsonContent _ = JsonValue.Create(float.NegativeInfinity); })
+            .Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => JsonContent.From(double.PositiveInfinity)).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => JsonContent.From<object>(float.NaN)).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+        FluentActions.Invoking(() => JsonContent.From<double?>(double.NaN)).Should().Throw<TypeSafeException>().WithMessage("*got Number*");
+
+        ((JsonContent)"NaN").ToNode()!.GetValue<string>().Should().Be("NaN", "text that happens to read NaN is still text");
+    }
+
+    [TestMethod]
     public void A_NaN_That_Caller_Options_Forbid_Is_An_Sdk_Error()
     {
         FluentActions.Invoking(() => JsonContent.From(new { x = double.NaN }, new System.Text.Json.JsonSerializerOptions()))
